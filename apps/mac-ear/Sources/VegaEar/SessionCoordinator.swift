@@ -74,6 +74,7 @@ final class SessionCoordinator {
     func shutdown() {
         serial.sync {
             if let sid = activeSessionId {
+                NSLog("[VegaEar] Ear ending session=\(sid) initiator=ear:quit reason=user bytesSent=\(bytesSentInSession)")
                 socket.sendJSON(EarSessionEndMessage(sessionId: sid, reason: .user))
             }
             activeSessionId = nil
@@ -89,6 +90,7 @@ final class SessionCoordinator {
         serial.async {
             self.paused = paused
             if paused, let sid = self.activeSessionId {
+                NSLog("[VegaEar] Ear ending session=\(sid) initiator=ear:pause reason=user bytesSent=\(self.bytesSentInSession)")
                 self.socket.sendJSON(EarSessionEndMessage(sessionId: sid, reason: .user))
                 self.activeSessionId = nil
                 self.safetyTimer?.cancel()
@@ -111,7 +113,7 @@ final class SessionCoordinator {
                 NSLog("[VegaEar] stopActiveSession called but no active session")
                 return
             }
-            NSLog("[VegaEar] stopActiveSession: ending session=\(sid) bytesSent=\(self.bytesSentInSession)")
+            NSLog("[VegaEar] Ear ending session=\(sid) initiator=ear:menu reason=user bytesSent=\(self.bytesSentInSession)")
             self.endSessionLocally(sessionId: sid, reason: .user)
         }
     }
@@ -178,7 +180,7 @@ final class SessionCoordinator {
         if let detector = silenceDetector {
             switch detector.feed(pcm: pcm) {
             case .endpoint:
-                NSLog("[VegaEar] local VAD endpoint, ending session=\(sid)")
+                NSLog("[VegaEar] Ear ending session=\(sid) initiator=ear:local_vad reason=vad bytesSent=\(bytesSentInSession)")
                 endSessionLocally(sessionId: sid, reason: .vad)
             case .waiting, .ongoing:
                 break
@@ -229,7 +231,7 @@ final class SessionCoordinator {
         timer.setEventHandler { [weak self] in
             guard let self else { return }
             guard self.activeSessionId == sessionId else { return }
-            NSLog("[VegaEar] safety timer fired for session=\(sessionId) bytesSent=\(self.bytesSentInSession)")
+            NSLog("[VegaEar] Ear ending session=\(sessionId) initiator=ear:safety_timer reason=timeout bytesSent=\(self.bytesSentInSession)")
             self.socket.sendJSON(EarSessionEndMessage(sessionId: sessionId, reason: .timeout))
             self.cues.play(.endpoint)
             self.activeSessionId = nil
@@ -263,7 +265,7 @@ final class SessionCoordinator {
             }
         case .sessionEnd(let m):
             serial.async {
-                NSLog("[VegaEar] session_end from Core: reason=\(m.reason.rawValue) detail=\(m.detail ?? "-") bytesSent=\(self.bytesSentInSession)")
+                NSLog("[VegaEar] Core ended session=\(m.sessionId) reason=\(m.reason.rawValue) detail=\(m.detail ?? "-") bytesSent=\(self.bytesSentInSession)")
                 guard self.activeSessionId == m.sessionId else { return }
                 self.activeSessionId = nil
                 self.safetyTimer?.cancel()

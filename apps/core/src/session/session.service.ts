@@ -116,13 +116,13 @@ export class SessionService {
     const session = this.bySessionId.get(message.sessionId);
     if (!session) return;
     const reason: CoreEndReason = message.reason === "user" ? "user" : "timeout";
-    await this.terminate(session, reason);
+    await this.terminate(session, reason, `ear:${message.reason}`);
   }
 
   async handleDisconnect(connection: EarConnection): Promise<void> {
     for (const session of this.bySessionId.values()) {
       if (session.deviceId === connection.deviceId && !session.closed) {
-        await this.terminate(session, "user");
+        await this.terminate(session, "user", "core:ear_disconnect");
       }
     }
   }
@@ -159,7 +159,7 @@ export class SessionService {
         { sessionId: session.sessionId, capMs: session.silenceCapMs },
         "Core silence cap reached, ending session",
       );
-      void this.terminate(session, "endpoint");
+      void this.terminate(session, "endpoint", "core:silence_cap");
     }, session.silenceCapMs);
   }
 
@@ -173,19 +173,20 @@ export class SessionService {
 
   private onSttError(session: InFlightSession, detail: string): void {
     if (session.closed) return;
-    void this.terminate(session, "stt_error", detail);
+    void this.terminate(session, "stt_error", "core:deepgram_error", detail);
   }
 
   private handleTimeout(sessionId: string): void {
     const session = this.bySessionId.get(sessionId);
     if (!session || session.closed) return;
     this.logger.warn({ sessionId }, "Session safety timeout, terminating");
-    void this.terminate(session, "timeout");
+    void this.terminate(session, "timeout", "core:safety_timeout");
   }
 
   private async terminate(
     session: InFlightSession,
     reason: CoreEndReason,
+    initiator: string,
     detail?: string,
   ): Promise<void> {
     if (session.closed) return;
@@ -198,13 +199,14 @@ export class SessionService {
     this.logger.info(
       {
         sessionId: session.sessionId,
+        initiator,
         reason,
         detail,
         audioChunks: session.audioBuffers.length,
         finals: session.finals.length,
         partials: session.partials.length,
       },
-      "Terminating session",
+      `Session ended by ${initiator} (reason=${reason})`,
     );
     session.deepgram?.close();
 
