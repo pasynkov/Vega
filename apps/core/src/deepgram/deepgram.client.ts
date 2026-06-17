@@ -105,13 +105,38 @@ export class DeepgramClient {
     });
 
     live.on(LiveTranscriptionEvents.Error, (err: any) => {
-      const detail = err?.message ?? String(err);
-      this.logger.warn({ err }, "Deepgram error");
+      const inner = err?.error;
+      const detail =
+        err?.message ||
+        inner?.message ||
+        err?.reason ||
+        `${err?.type ?? "Error"} (no message)`;
+      this.logger.warn(
+        {
+          type: err?.type,
+          innerType: inner?.type,
+          innerStack: inner?.stack ? String(inner.stack).split("\n").slice(0, 3).join(" | ") : undefined,
+          hint:
+            inner?.type === "TypeError" && /onSocketClose/.test(String(inner?.stack))
+              ? "Likely Deepgram closed the WS without a body — check DEEPGRAM_API_KEY validity and account credit"
+              : undefined,
+        },
+        `Deepgram error: ${detail}`,
+      );
       callbacks.onError(detail);
     });
 
     live.on(LiveTranscriptionEvents.Close, (event: any) => {
-      this.logger.info({ event, bytesSent, framesSent }, "Deepgram live socket closed");
+      this.logger.info(
+        {
+          code: event?.code,
+          reason: event?.reason,
+          wasClean: event?.wasClean,
+          bytesSent,
+          framesSent,
+        },
+        "Deepgram live socket closed",
+      );
       callbacks.onClose();
     });
 
