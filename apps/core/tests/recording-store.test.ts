@@ -58,6 +58,7 @@ describe("RecordingStore", () => {
       partials: ["напомни купить"],
       finals: ["напомни купить молоко"],
       audioBuffers: [syntheticPcm()],
+      sampleRate: 48_000,
     };
 
     await store.persist(session);
@@ -95,6 +96,7 @@ describe("RecordingStore", () => {
       partials: [],
       finals: [],
       audioBuffers: [],
+      sampleRate: 48_000,
     };
     await store.persist(session);
     expect(readdirSync(tmp)).toEqual([]);

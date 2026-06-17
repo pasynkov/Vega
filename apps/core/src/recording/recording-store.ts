@@ -21,6 +21,7 @@ export interface SessionRecord {
   partials: string[];
   finals: string[];
   audioBuffers: Buffer[];
+  sampleRate: number;
 }
 
 @Injectable()
@@ -42,7 +43,7 @@ export class RecordingStore {
 
     const pcm = Buffer.concat(session.audioBuffers);
     const audioPath = join(dir, "audio.ogg");
-    await this.encodePcmToOggOpus(pcm, audioPath);
+    await this.encodePcmToOggOpus(pcm, audioPath, session.sampleRate);
 
     const finalText = session.finals.join(" ").trim();
     const transcript = finalText.length > 0 ? finalText : session.partials.join(" ").trim();
@@ -59,6 +60,7 @@ export class RecordingStore {
       wakeScore: session.wakeScore,
       language: session.language,
       transcriptConfidence: session.transcriptConfidence,
+      sampleRate: session.sampleRate,
     };
     await writeFile(join(dir, "meta.json"), JSON.stringify(meta, null, 2) + "\n", "utf-8");
 
@@ -68,15 +70,15 @@ export class RecordingStore {
     );
   }
 
-  // Pipe PCM (signed 16-bit LE, 48 kHz, mono) into ffmpeg, mux as OGG/OPUS.
-  // Telegram's sendVoice accepts the result without re-encoding.
-  private encodePcmToOggOpus(pcm: Buffer, outPath: string): Promise<void> {
+  // Pipe PCM (signed 16-bit LE, mono, captured sample rate) into ffmpeg, mux
+  // as OGG/OPUS. Telegram's sendVoice accepts the result without re-encoding.
+  private encodePcmToOggOpus(pcm: Buffer, outPath: string, sampleRate: number): Promise<void> {
     return new Promise((resolve, reject) => {
       const args = [
         "-hide_banner",
         "-loglevel", "warning",
         "-f", "s16le",
-        "-ar", "48000",
+        "-ar", String(sampleRate),
         "-ac", "1",
         "-i", "pipe:0",
         "-c:a", "libopus",

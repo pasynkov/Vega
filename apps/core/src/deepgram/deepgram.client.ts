@@ -36,13 +36,13 @@ export class DeepgramClient {
     return this.sdk;
   }
 
-  open(callbacks: DeepgramSessionCallbacks): DeepgramSession {
+  open(callbacks: DeepgramSessionCallbacks, sampleRate: number): DeepgramSession {
     this.logger.info(
       {
         language: this.env.deepgramLanguage,
         model: "nova-2",
         encoding: "linear16",
-        sample_rate: 48_000,
+        sampleRate,
       },
       "Opening Deepgram live session",
     );
@@ -51,7 +51,7 @@ export class DeepgramClient {
       language: this.env.deepgramLanguage,
       model: "nova-2",
       encoding: "linear16",
-      sample_rate: 48_000,
+      sample_rate: sampleRate,
       channels: 1,
       interim_results: true,
       utterance_end_ms: 1_000,

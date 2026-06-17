@@ -56,7 +56,7 @@ final class SessionCoordinator {
                     NSLog("[VegaEar] SessionCoordinator sink #\(self.sinkCallbackCount): bytes=\(pcm.count) paused=\(self.paused) activeSession=\(self.activeSessionId ?? "nil")")
                 }
                 if !self.paused {
-                    let downsampled = Self.downsample48kTo16k(pcm)
+                    let downsampled = self.downsample48kTo16k(pcm)
                     self.wake.feed(downsampled)
                 }
                 if self.activeSessionId != nil {
@@ -148,7 +148,7 @@ final class SessionCoordinator {
                 deviceId: self.deviceId,
                 sessionId: sessionId,
                 userId: nil,
-                sampleRate: 48_000,
+                sampleRate: Int(self.audio.currentSampleRate),
                 codec: .linear16
             )
             self.socket.sendJSON(startMsg)
@@ -287,19 +287,21 @@ final class SessionCoordinator {
         }
     }
 
-    // Naive 3:1 decimation 48 kHz -> 16 kHz for Porcupine. Picks every third
-    // int16 sample; good enough for keyword spotting at low CPU cost. A future
-    // change can swap in a proper low-pass filter if false-positive rate rises.
-    private static func downsample48kTo16k(_ pcm: Data) -> Data {
+    // Naive decimation to 16 kHz for Porcupine. Computes stride from the
+    // actual capture rate so it works whether the device delivered 48 kHz
+    // (built-in mic) or 16 kHz (AirPods HFP).
+    private func downsample48kTo16k(_ pcm: Data) -> Data {
+        let stride = max(1, Int((audio.currentSampleRate / 16_000.0).rounded()))
+        if stride == 1 { return pcm }
         let count = pcm.count / MemoryLayout<Int16>.size
         var samples = [Int16](repeating: 0, count: count)
         _ = samples.withUnsafeMutableBytes { pcm.copyBytes(to: $0) }
         var out: [Int16] = []
-        out.reserveCapacity(count / 3 + 1)
+        out.reserveCapacity(count / stride + 1)
         var i = 0
         while i < samples.count {
             out.append(samples[i])
-            i += 3
+            i += stride
         }
         return out.withUnsafeBufferPointer { Data(buffer: $0) }
     }

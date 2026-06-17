@@ -52,22 +52,26 @@ export class SessionService {
       partials: [],
       finals: [],
       audioBuffers: [],
+      sampleRate: message.sampleRate,
       shortId,
       deepgram: null,
       timeout: setTimeout(() => this.handleTimeout(message.sessionId), this.env.sessionTimeoutMs),
       closed: false,
     };
 
-    const deepgram = this.deepgram.open({
-      onPartial: (text) => this.onPartial(session, text),
-      onFinal: (text, confidence) => this.onFinal(session, text, confidence),
-      onUtteranceEnd: () => this.onUtteranceEnd(session),
-      onError: (detail) => this.onSttError(session, detail),
-      onClose: () => {
-        // Deepgram socket closed; SessionService is responsible for end-of-session,
-        // not Deepgram's lifecycle event. No-op here.
+    const deepgram = this.deepgram.open(
+      {
+        onPartial: (text) => this.onPartial(session, text),
+        onFinal: (text, confidence) => this.onFinal(session, text, confidence),
+        onUtteranceEnd: () => this.onUtteranceEnd(session),
+        onError: (detail) => this.onSttError(session, detail),
+        onClose: () => {
+          // Deepgram socket closed; SessionService is responsible for end-of-session,
+          // not Deepgram's lifecycle event. No-op here.
+        },
       },
-    });
+      message.sampleRate,
+    );
     session.deepgram = deepgram;
 
     this.bySessionId.set(session.sessionId, session);

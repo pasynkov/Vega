@@ -2,52 +2,44 @@ import AVFoundation
 import CoreAudio
 import Foundation
 
-// Captures 48 kHz mono PCM from the chosen input device and broadcasts the
-// frames to two consumers: the wake-word detector and the session capture
-// pipeline. A 1-second pre-roll ring buffer is retained so a session can
-// include the moments just before the wake word fired.
+// Captures PCM from the chosen input device at the device's native sample
+// rate (no resampling on the Ear) and broadcasts the frames to consumers.
+// A 1-second pre-roll ring buffer retains a few seconds of audio so a
+// session can include the moments just before the wake word fired.
 //
-// AVAudioEngine on macOS does not reliably re-target the input AudioUnit's
-// HAL device after the engine has started, so each `selectDevice(_:)`
-// call rebuilds a fresh AVAudioEngine and reinstalls the tap.
+// AVAudioEngine on macOS requires a downstream consumer to actually pull
+// audio from inputNode, so the engine routes inputNode -> mainMixerNode at
+// outputVolume 0 (mute) — without this the installTap closure is never
+// invoked.
+//
+// AVAudioConverter was previously used to resample to 48 kHz int16 mono,
+// but its block-based API silently truncated each callback's output due to
+// per-call priming, so we now do a trivial manual Float32 -> Int16 cast and
+// expose the actual capture rate via `currentSampleRate`. Consumers (Core,
+// Deepgram, ffmpeg) are told the real rate via the session_start message.
 
 final class AudioEngine {
     typealias PCMSink = (Data) -> Void
 
-    let sampleRate: Double = 48_000
     private var engine = AVAudioEngine()
     private let queue = DispatchQueue(label: "vega.ear.audio", qos: .userInitiated)
     private var sinks: [PCMSink] = []
-    private var preRoll = RingBuffer<Data>(capacityHint: 50)
-    private let targetFormat: AVAudioFormat
-    private var converter: AVAudioConverter?
-    private var converterInputFormat: AVAudioFormat?
+    private var preRoll = RingBuffer<Data>(capacityHint: 100)
     private(set) var isRunning = false
     private(set) var currentDevice: MicDevice?
+    private(set) var currentSampleRate: Double = 48_000
     private var tapCallbackCount: Int = 0
     private var tapBytesProducedSinceReport: Int = 0
     private var tapReportAt: Date = Date()
 
-    init() throws {
-        targetFormat = AVAudioFormat(
-            commonFormat: .pcmFormatInt16,
-            sampleRate: sampleRate,
-            channels: 1,
-            interleaved: true
-        )!
-    }
+    init() throws {}
 
     func selectDevice(_ device: MicDevice?) throws {
         NSLog("[VegaEar] AudioEngine.selectDevice begin: target=\(device?.name ?? "(system default)")")
         let wasRunning = isRunning
         if wasRunning { stop() }
 
-        // Rebuild the engine. AVAudioEngine caches a HAL AudioUnit on the
-        // input node that survives stop()/start() but doesn't reliably
-        // honour kAudioOutputUnitProperty_CurrentDevice after first use.
         engine = AVAudioEngine()
-        converter = nil
-        converterInputFormat = nil
         NSLog("[VegaEar] AudioEngine rebuilt")
 
         if let device {
@@ -56,9 +48,6 @@ final class AudioEngine {
         }
         currentDevice = device
 
-        // Defer installTap until engine.start() — querying inputNode.outputFormat
-        // (which installTap requires) can block on macOS while the HAL AudioUnit
-        // is still negotiating the new device's format (esp. AirPods HFP).
         if wasRunning {
             try start()
         } else {
@@ -70,11 +59,6 @@ final class AudioEngine {
         if isRunning { return }
         NSLog("[VegaEar] AudioEngine.start: preparing…")
 
-        // macOS workaround: AVAudioEngine doesn't actively pull samples from
-        // inputNode unless something downstream is consuming them. Without a
-        // graph connection, installTap is silently never invoked. Route
-        // inputNode → mainMixer at outputVolume 0 so the input AudioUnit is
-        // pulled, the tap fires, and no audio is rendered to speakers.
         let mixer = engine.mainMixerNode
         mixer.outputVolume = 0
         let inputFormat = engine.inputNode.inputFormat(forBus: 0)
@@ -93,7 +77,6 @@ final class AudioEngine {
         let actualId = Self.readCurrentInputDevice(engine.inputNode)
         NSLog("[VegaEar] AudioEngine started, requested=\(currentDevice?.name ?? "(system default)") audioUnit.deviceID=\(actualId?.description ?? "?")")
         installTap()
-        NSLog("[VegaEar] tap installed (format=\(engine.inputNode.outputFormat(forBus: 0)))")
     }
 
     func stop() {
@@ -117,6 +100,8 @@ final class AudioEngine {
     private func installTap() {
         let input = engine.inputNode
         let inputFormat = input.outputFormat(forBus: 0)
+        currentSampleRate = inputFormat.sampleRate
+        NSLog("[VegaEar] tap installing: format=\(inputFormat) sampleRate=\(currentSampleRate) channels=\(inputFormat.channelCount)")
         input.removeTap(onBus: 0)
         tapCallbackCount = 0
         tapBytesProducedSinceReport = 0
@@ -124,18 +109,9 @@ final class AudioEngine {
         input.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
             guard let self else { return }
             self.tapCallbackCount += 1
+            let data = Self.floatBufferToInt16Mono(buffer)
             if self.tapCallbackCount <= 3 {
-                NSLog("[VegaEar] tap callback #\(self.tapCallbackCount): frameLength=\(buffer.frameLength) inputFormat=\(buffer.format)")
-            }
-            guard let converted = self.convert(buffer: buffer) else {
-                if self.tapCallbackCount <= 3 {
-                    NSLog("[VegaEar] tap callback #\(self.tapCallbackCount): convert returned nil")
-                }
-                return
-            }
-            let data = Self.dataFromBuffer(converted)
-            if self.tapCallbackCount <= 3 {
-                NSLog("[VegaEar] tap callback #\(self.tapCallbackCount): converted bytes=\(data.count) (targetFormat=\(self.targetFormat))")
+                NSLog("[VegaEar] tap callback #\(self.tapCallbackCount): frameLength=\(buffer.frameLength) inFmt=\(buffer.format) outBytes=\(data.count)")
             }
             self.tapBytesProducedSinceReport += data.count
             let now = Date()
@@ -144,6 +120,7 @@ final class AudioEngine {
                 self.tapBytesProducedSinceReport = 0
                 self.tapReportAt = now
             }
+            if data.isEmpty { return }
             self.queue.async {
                 self.preRoll.push(data)
                 if self.sinks.isEmpty && self.tapCallbackCount <= 3 {
@@ -154,52 +131,30 @@ final class AudioEngine {
                 }
             }
         }
+        NSLog("[VegaEar] tap installed")
     }
 
-    private func convert(buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
-        if converter == nil || converterInputFormat != buffer.format {
-            converter = AVAudioConverter(from: buffer.format, to: targetFormat)
-            converterInputFormat = buffer.format
-            NSLog("[VegaEar] AVAudioConverter rebuilt: input=\(buffer.format) target=\(targetFormat) ok=\(converter != nil)")
+    // Convert a buffer's first channel of Float32 samples to interleaved Int16.
+    // Falls back to int16ChannelData when the engine already gave us int16.
+    private static func floatBufferToInt16Mono(_ buffer: AVAudioPCMBuffer) -> Data {
+        let frameCount = Int(buffer.frameLength)
+        if frameCount == 0 { return Data() }
+
+        if let int16 = buffer.int16ChannelData?[0] {
+            let byteCount = frameCount * MemoryLayout<Int16>.size
+            return Data(bytes: int16, count: byteCount)
         }
-        guard let converter else { return nil }
-        let capacity = AVAudioFrameCount(targetFormat.sampleRate * Double(buffer.frameLength) / buffer.format.sampleRate) + 16
-        guard let out = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else {
-            NSLog("[VegaEar] convert: failed to allocate output buffer capacity=\(capacity)")
-            return nil
-        }
-        var error: NSError?
-        var supplied = false
-        let status = converter.convert(to: out, error: &error) { _, status in
-            if supplied {
-                status.pointee = .endOfStream
-                return nil
+        guard let float = buffer.floatChannelData?[0] else { return Data() }
+
+        var out = Data(count: frameCount * MemoryLayout<Int16>.size)
+        out.withUnsafeMutableBytes { rawDst in
+            guard let dst = rawDst.baseAddress?.assumingMemoryBound(to: Int16.self) else { return }
+            for i in 0..<frameCount {
+                let clipped = max(-1.0, min(1.0, float[i]))
+                dst[i] = Int16(clipped * 32_767)
             }
-            supplied = true
-            status.pointee = .haveData
-            return buffer
-        }
-        if let error {
-            NSLog("[VegaEar] convert: AVAudioConverter error: \(error) status=\(status.rawValue)")
-            return nil
-        }
-        if out.frameLength == 0 {
-            // First callback after rebuild often gets a "primed" output of zero
-            // frames; log only the first time to flag if it persists.
-            if tapCallbackCount <= 3 {
-                NSLog("[VegaEar] convert: output frameLength=0 (status=\(status.rawValue))")
-            }
-            return nil
         }
         return out
-    }
-
-    private static func dataFromBuffer(_ buffer: AVAudioPCMBuffer) -> Data {
-        let frameCount = Int(buffer.frameLength)
-        let channels = Int(buffer.format.channelCount)
-        let byteCount = frameCount * channels * MemoryLayout<Int16>.size
-        guard let ptr = buffer.int16ChannelData?[0] else { return Data() }
-        return Data(bytes: ptr, count: byteCount)
     }
 
     private static func readCurrentInputDevice(_ inputNode: AVAudioInputNode) -> AudioDeviceID? {
@@ -217,8 +172,6 @@ final class AudioEngine {
         return status == noErr ? id : nil
     }
 
-    // Bind the input node's underlying HAL AudioUnit to a specific CoreAudio
-    // device. Must run while the engine is stopped.
     private static func setInputDevice(_ inputNode: AVAudioInputNode, deviceId: AudioDeviceID) throws {
         guard let unit = inputNode.audioUnit else {
             throw NSError(domain: "VegaEar.AudioEngine", code: 1, userInfo: [NSLocalizedDescriptionKey: "Input node has no AudioUnit"])
@@ -237,8 +190,6 @@ final class AudioEngine {
         }
     }
 }
-
-// MARK: - Ring buffer
 
 struct RingBuffer<Element> {
     private var storage: [Element] = []
