@@ -95,6 +95,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func refreshMicMenu() {
         let devices = MicDeviceCatalog.list()
-        statusController.updateMicMenu(devices: devices, selectedUID: preferences.micUID)
+        statusController.setMicSnapshot(devices: devices, selectedUID: preferences.micUID)
     }
 }

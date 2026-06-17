@@ -73,7 +73,8 @@ final class AudioEngine {
             throw error
         }
         isRunning = true
-        NSLog("[VegaEar] AudioEngine started, mic=\(currentDevice?.name ?? "(system default)")")
+        let actualId = Self.readCurrentInputDevice(engine.inputNode)
+        NSLog("[VegaEar] AudioEngine started, requested=\(currentDevice?.name ?? "(system default)") audioUnit.deviceID=\(actualId?.description ?? "?")")
     }
 
     func stop() {
@@ -140,6 +141,21 @@ final class AudioEngine {
         let byteCount = frameCount * channels * MemoryLayout<Int16>.size
         guard let ptr = buffer.int16ChannelData?[0] else { return Data() }
         return Data(bytes: ptr, count: byteCount)
+    }
+
+    private static func readCurrentInputDevice(_ inputNode: AVAudioInputNode) -> AudioDeviceID? {
+        guard let unit = inputNode.audioUnit else { return nil }
+        var id: AudioDeviceID = 0
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = AudioUnitGetProperty(
+            unit,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &id,
+            &size
+        )
+        return status == noErr ? id : nil
     }
 
     // Bind the input node's underlying HAL AudioUnit to a specific CoreAudio

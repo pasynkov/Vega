@@ -28,11 +28,16 @@ enum ListeningState: Equatable {
     }
 }
 
-final class StatusItemController {
+final class StatusItemController: NSObject {
     var onPauseToggle: ((Bool) -> Void)?
     var onQuit: (() -> Void)?
     var onTestWake: (() -> Void)?
     var onMicSelected: ((String?) -> Void)?  // nil = system default
+
+    // Snapshot supplied by AppDelegate; the submenu reads it via the delegate
+    // every time it's about to open so the checkmark is always fresh.
+    private var micDevices: [MicDevice] = []
+    private var micSelectedUID: String?
 
     private let statusItem: NSStatusItem
     private let stateMenuItem: NSMenuItem
@@ -43,23 +48,25 @@ final class StatusItemController {
     private var paused = false
     private var currentState: ListeningState = .idle
 
-    init() {
+    override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         stateMenuItem = NSMenuItem(title: ListeningState.idle.menuLabel, action: nil, keyEquivalent: "")
         stateMenuItem.isEnabled = false
         toggleMenuItem = NSMenuItem(title: "Pause listening", action: nil, keyEquivalent: "")
-        toggleMenuItem.target = nil
         testWakeMenuItem = NSMenuItem(title: "Trigger test wake", action: nil, keyEquivalent: "t")
-        testWakeMenuItem.target = nil
         micMenuItem = NSMenuItem(title: "Microphone", action: nil, keyEquivalent: "")
         micSubmenu = NSMenu(title: "Microphone")
         micMenuItem.submenu = micSubmenu
-        let quitItem = NSMenuItem(title: "Quit", action: #selector(quitClicked), keyEquivalent: "q")
-        quitItem.target = self
+        super.init()
+
         toggleMenuItem.action = #selector(toggleClicked)
         toggleMenuItem.target = self
         testWakeMenuItem.action = #selector(testWakeClicked)
         testWakeMenuItem.target = self
+        micSubmenu.delegate = self
+
+        let quitItem = NSMenuItem(title: "Quit", action: #selector(quitClicked), keyEquivalent: "q")
+        quitItem.target = self
 
         let menu = NSMenu()
         menu.addItem(stateMenuItem)
@@ -83,25 +90,28 @@ final class StatusItemController {
         }
     }
 
-    func updateMicMenu(devices: [MicDevice], selectedUID: String?) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.micSubmenu.removeAllItems()
+    func setMicSnapshot(devices: [MicDevice], selectedUID: String?) {
+        micDevices = devices
+        micSelectedUID = selectedUID
+        rebuildMicSubmenu()
+    }
 
-            let systemItem = NSMenuItem(title: "System default", action: #selector(self.micItemClicked(_:)), keyEquivalent: "")
-            systemItem.target = self
-            systemItem.state = (selectedUID == nil) ? .on : .off
-            systemItem.representedObject = NSNull()
-            self.micSubmenu.addItem(systemItem)
-            self.micSubmenu.addItem(NSMenuItem.separator())
+    private func rebuildMicSubmenu() {
+        micSubmenu.removeAllItems()
 
-            for device in devices {
-                let item = NSMenuItem(title: device.name, action: #selector(self.micItemClicked(_:)), keyEquivalent: "")
-                item.target = self
-                item.state = (device.uid == selectedUID) ? .on : .off
-                item.representedObject = device.uid
-                self.micSubmenu.addItem(item)
-            }
+        let systemItem = NSMenuItem(title: "System default", action: #selector(micItemClicked(_:)), keyEquivalent: "")
+        systemItem.target = self
+        systemItem.state = (micSelectedUID == nil) ? .on : .off
+        systemItem.representedObject = NSNull()
+        micSubmenu.addItem(systemItem)
+        micSubmenu.addItem(NSMenuItem.separator())
+
+        for device in micDevices {
+            let item = NSMenuItem(title: device.name, action: #selector(micItemClicked(_:)), keyEquivalent: "")
+            item.target = self
+            item.state = (device.uid == micSelectedUID) ? .on : .off
+            item.representedObject = device.uid
+            micSubmenu.addItem(item)
         }
     }
 
@@ -134,5 +144,12 @@ final class StatusItemController {
             image?.isTemplate = true
             button.image = image
         }
+    }
+}
+
+extension StatusItemController: NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === micSubmenu else { return }
+        rebuildMicSubmenu()
     }
 }
