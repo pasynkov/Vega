@@ -99,6 +99,7 @@ final class StatusItemController: NSObject {
 
     private func rebuildMicSubmenu() {
         NSLog("[VegaEar] StatusItem.rebuildMicSubmenu: micSelectedUID=\(micSelectedUID ?? "nil")")
+        micSubmenu.autoenablesItems = false
         micSubmenu.removeAllItems()
 
         let systemItem = NSMenuItem(title: "System default", action: #selector(micItemClicked(_:)), keyEquivalent: "")
@@ -114,7 +115,10 @@ final class StatusItemController: NSObject {
             item.state = (device.uid == micSelectedUID) ? .on : .off
             item.representedObject = device.uid
             micSubmenu.addItem(item)
+            NSLog("[VegaEar]   item '\(device.name)' uid=\(device.uid) state=\(item.state == .on ? "ON" : "OFF")")
         }
+        NSLog("[VegaEar]   item 'System default' state=\(systemItem.state == .on ? "ON" : "OFF")")
+        micSubmenu.update()
     }
 
     @objc private func toggleClicked() {
@@ -152,7 +156,33 @@ final class StatusItemController: NSObject {
 extension StatusItemController: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         guard menu === micSubmenu else { return }
-        NSLog("[VegaEar] StatusItem.menuNeedsUpdate fired for micSubmenu, selectedUID=\(micSelectedUID ?? "nil")")
+        NSLog("[VegaEar] StatusItem.menuNeedsUpdate (micSubmenu)")
         rebuildMicSubmenu()
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        guard menu === micSubmenu else { return }
+        NSLog("[VegaEar] StatusItem.menuWillOpen (micSubmenu)")
+        rebuildMicSubmenu()
+    }
+}
+
+// NSMenuValidation: AppKit re-asks the target for each menu item before
+// drawing it. We refresh checkmarks here as belt-and-suspenders so the
+// state is correct even if menuWillOpen/menuNeedsUpdate misfires.
+extension StatusItemController {
+    @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(micItemClicked(_:)) {
+            let want: NSControl.StateValue
+            if menuItem.representedObject is NSNull {
+                want = (micSelectedUID == nil) ? .on : .off
+            } else if let uid = menuItem.representedObject as? String {
+                want = (uid == micSelectedUID) ? .on : .off
+            } else {
+                want = .off
+            }
+            menuItem.state = want
+        }
+        return true
     }
 }
