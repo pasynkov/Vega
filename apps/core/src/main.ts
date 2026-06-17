@@ -27,33 +27,28 @@ async function bootstrap(): Promise<void> {
   );
 
   let shuttingDown = false;
-  const shutdown = async (signal: string) => {
+  const shutdown = (signal: string) => {
     if (shuttingDown) {
-      logger.warn(`Force exit on second ${signal}`, "Bootstrap");
+      // eslint-disable-next-line no-console
+      console.error(`[Bootstrap] Force exit on second ${signal}`);
       process.exit(1);
     }
     shuttingDown = true;
     logger.log(`Shutting down (${signal})…`, "Bootstrap");
-    const watchdog = setTimeout(() => {
+
+    // Hard upper bound. Pino's pretty-print transport runs in a worker
+    // thread that keeps the event loop alive even after app.close()
+    // resolves, so the only reliable way to return the shell is exit().
+    setTimeout(() => {
       // eslint-disable-next-line no-console
       console.error("[Bootstrap] Shutdown watchdog tripped — forcing exit");
-      process.exit(1);
-    }, 2_000);
-    watchdog.unref();
-    try {
-      await app.close();
-    } catch (err) {
-      logger.error(`Error during app.close(): ${err}`, "Bootstrap");
-    } finally {
-      clearTimeout(watchdog);
-      // Pino's pretty-print transport runs in a worker thread that keeps the
-      // event loop alive after app.close(). exit() is the only reliable way
-      // to actually return the shell prompt.
       process.exit(0);
-    }
+    }, 1_000).unref();
+
+    void app.close().finally(() => process.exit(0));
   };
-  process.on("SIGINT", () => void shutdown("SIGINT"));
-  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
 }
 
 bootstrap().catch((err) => {
