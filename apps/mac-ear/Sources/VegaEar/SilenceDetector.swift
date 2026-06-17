@@ -1,25 +1,30 @@
 import Foundation
 
-// Streaming VAD: feed PCM (int16, 48 kHz mono) and the detector reports back
-// whether the trailing audio looks like silence for long enough to end the
-// utterance. The detector requires the user to actually speak first (so we
-// don't terminate a session before they've started). Once speech has been
-// observed, sustained silence over `endSilenceMs` triggers the endpoint.
+// Streaming VAD with auto-calibrated noise floor. The first
+// `calibrationMs` of each session are used to estimate the ambient RMS
+// (75th percentile so a single keypress click doesn't poison the floor).
+// After that, speech is detected when RMS rises `speechMargin` above the
+// floor, and silence is declared when it drops within `silenceMargin` of
+// the floor. Endpoint fires after `endSilenceMs` of sustained silence
+// following observed speech.
 
 final class SilenceDetector {
     struct Config {
-        var sampleRate: Double = 48_000
-        var speechRmsThreshold: Double = 600         // ~ -35 dBFS
-        var silenceRmsThreshold: Double = 350        // ~ -39 dBFS
         var endSilenceMs: Int = 3_000
-        var minPreSpeechMs: Int = 300
         var graceMs: Int = 500
+        var calibrationMs: Int = 600
+        var speechMargin: Double = 300
+        var silenceMargin: Double = 100
+        var fallbackNoiseFloor: Double = 100
     }
 
     private let config: Config
     private var sawSpeech = false
     private var silenceStartedAt: Date?
     private let startedAt = Date()
+    private var noiseFloorRms: Double = 0
+    private var calibrationSamples: [Double] = []
+    private var lastLoggedState: String = ""
 
     init(config: Config = Config()) {
         self.config = config
@@ -32,30 +37,74 @@ final class SilenceDetector {
     }
 
     func feed(pcm: Data) -> Decision {
-        guard Date().timeIntervalSince(startedAt) * 1000 >= Double(config.graceMs) else {
+        let nowMs = Date().timeIntervalSince(startedAt) * 1000
+        let rms = Self.computeRms(pcm)
+
+        if nowMs < Double(config.calibrationMs) {
+            calibrationSamples.append(rms)
             return .waiting
         }
-        let rms = Self.computeRms(pcm)
-        if rms >= config.speechRmsThreshold {
+        if noiseFloorRms == 0 {
+            if calibrationSamples.isEmpty {
+                noiseFloorRms = config.fallbackNoiseFloor
+            } else {
+                let sorted = calibrationSamples.sorted()
+                let idx = max(0, min(sorted.count - 1, Int(Double(sorted.count) * 0.75)))
+                noiseFloorRms = max(config.fallbackNoiseFloor, sorted[idx])
+            }
+            NSLog(String(
+                format: "[VegaEar] VAD calibrated: noiseFloor=%.0f speechThr=%.0f silenceThr=%.0f",
+                noiseFloorRms,
+                noiseFloorRms + config.speechMargin,
+                noiseFloorRms + config.silenceMargin
+            ))
+        }
+
+        if nowMs < Double(config.graceMs) {
+            return .waiting
+        }
+
+        let speechThresh = noiseFloorRms + config.speechMargin
+        let silenceThresh = noiseFloorRms + config.silenceMargin
+
+        if rms >= speechThresh {
+            if !sawSpeech {
+                NSLog(String(format: "[VegaEar] VAD speech detected, RMS=%.0f threshold=%.0f", rms, speechThresh))
+            }
             sawSpeech = true
             silenceStartedAt = nil
+            logState("speech")
             return .ongoing
         }
         if !sawSpeech {
+            logState("pre-speech")
             return .waiting
         }
-        if rms <= config.silenceRmsThreshold {
+        if rms <= silenceThresh {
             if silenceStartedAt == nil {
                 silenceStartedAt = Date()
+                NSLog(String(format: "[VegaEar] VAD silence started, RMS=%.0f threshold=%.0f", rms, silenceThresh))
             }
             if let started = silenceStartedAt,
                Date().timeIntervalSince(started) * 1000 >= Double(config.endSilenceMs) {
+                NSLog("[VegaEar] VAD endpoint: sustained silence \(config.endSilenceMs) ms")
                 return .endpoint
             }
+            logState("silence")
         } else {
+            if silenceStartedAt != nil {
+                NSLog(String(format: "[VegaEar] VAD silence broken, RMS=%.0f", rms))
+            }
             silenceStartedAt = nil
+            logState("speech-tail")
         }
         return .ongoing
+    }
+
+    private func logState(_ state: String) {
+        // Rate-limit by only logging state transitions (not every frame).
+        guard state != lastLoggedState else { return }
+        lastLoggedState = state
     }
 
     private static func computeRms(_ pcm: Data) -> Double {
