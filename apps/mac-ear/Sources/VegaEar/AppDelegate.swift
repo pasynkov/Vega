@@ -6,10 +6,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var coordinator: SessionCoordinator!
     private var identity: DeviceIdentityService!
     private var secrets: SecretStore!
+    private var preferences: Preferences!
+    private var audio: AudioEngine!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         identity = DeviceIdentityService()
         secrets = SecretStore()
+        preferences = Preferences()
         statusController = StatusItemController()
         statusController.onPauseToggle = { [weak self] paused in
             self?.coordinator.setPaused(paused)
@@ -21,9 +24,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusController.onTestWake = { [weak self] in
             self?.coordinator.simulateWake()
         }
+        statusController.onMicSelected = { [weak self] uid in
+            self?.applyMicSelection(uid: uid)
+        }
 
         do {
-            let audio = try AudioEngine()
+            audio = try AudioEngine()
             let encoder = PcmPassthroughEncoder()
             let cues = CuePlayer()
             let socket = EarSocket(
@@ -31,6 +37,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 deviceId: identity.deviceId,
                 deviceName: identity.deviceName
             )
+
+            // Apply persisted mic choice (if any) before starting the engine.
+            if let uid = preferences.micUID, let device = MicDeviceCatalog.find(uid: uid) {
+                try audio.selectDevice(device)
+            } else {
+                try audio.selectDevice(nil)
+            }
+            refreshMicMenu()
 
             let wakeDetector: WakeWordDetector
             do {
@@ -63,5 +77,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         coordinator?.shutdown()
+    }
+
+    private func applyMicSelection(uid: String?) {
+        guard let audio else { return }
+        do {
+            let device = uid.flatMap { MicDeviceCatalog.find(uid: $0) }
+            try audio.selectDevice(device)
+            preferences.setMicUID(uid)
+            NSLog("[VegaEar] mic selected: uid=\(uid ?? "system default")")
+            refreshMicMenu()
+        } catch {
+            NSLog("[VegaEar] Failed to apply mic selection: \(error)")
+            statusController.setState(.error("Mic selection failed: \(error.localizedDescription)"))
+        }
+    }
+
+    private func refreshMicMenu() {
+        let devices = MicDeviceCatalog.list()
+        statusController.updateMicMenu(devices: devices, selectedUID: preferences.micUID)
     }
 }

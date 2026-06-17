@@ -32,11 +32,14 @@ final class StatusItemController {
     var onPauseToggle: ((Bool) -> Void)?
     var onQuit: (() -> Void)?
     var onTestWake: (() -> Void)?
+    var onMicSelected: ((String?) -> Void)?  // nil = system default
 
     private let statusItem: NSStatusItem
     private let stateMenuItem: NSMenuItem
     private let toggleMenuItem: NSMenuItem
     private let testWakeMenuItem: NSMenuItem
+    private let micMenuItem: NSMenuItem
+    private let micSubmenu: NSMenu
     private var paused = false
     private var currentState: ListeningState = .idle
 
@@ -48,6 +51,9 @@ final class StatusItemController {
         toggleMenuItem.target = nil
         testWakeMenuItem = NSMenuItem(title: "Trigger test wake", action: nil, keyEquivalent: "t")
         testWakeMenuItem.target = nil
+        micMenuItem = NSMenuItem(title: "Microphone", action: nil, keyEquivalent: "")
+        micSubmenu = NSMenu(title: "Microphone")
+        micMenuItem.submenu = micSubmenu
         let quitItem = NSMenuItem(title: "Quit", action: #selector(quitClicked), keyEquivalent: "q")
         quitItem.target = self
         toggleMenuItem.action = #selector(toggleClicked)
@@ -58,6 +64,7 @@ final class StatusItemController {
         let menu = NSMenu()
         menu.addItem(stateMenuItem)
         menu.addItem(NSMenuItem.separator())
+        menu.addItem(micMenuItem)
         menu.addItem(toggleMenuItem)
         menu.addItem(testWakeMenuItem)
         menu.addItem(NSMenuItem.separator())
@@ -76,6 +83,28 @@ final class StatusItemController {
         }
     }
 
+    func updateMicMenu(devices: [MicDevice], selectedUID: String?) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.micSubmenu.removeAllItems()
+
+            let systemItem = NSMenuItem(title: "System default", action: #selector(self.micItemClicked(_:)), keyEquivalent: "")
+            systemItem.target = self
+            systemItem.state = (selectedUID == nil) ? .on : .off
+            systemItem.representedObject = NSNull()
+            self.micSubmenu.addItem(systemItem)
+            self.micSubmenu.addItem(NSMenuItem.separator())
+
+            for device in devices {
+                let item = NSMenuItem(title: device.name, action: #selector(self.micItemClicked(_:)), keyEquivalent: "")
+                item.target = self
+                item.state = (device.uid == selectedUID) ? .on : .off
+                item.representedObject = device.uid
+                self.micSubmenu.addItem(item)
+            }
+        }
+    }
+
     @objc private func toggleClicked() {
         paused.toggle()
         toggleMenuItem.title = paused ? "Resume listening" : "Pause listening"
@@ -89,6 +118,14 @@ final class StatusItemController {
 
     @objc private func testWakeClicked() {
         onTestWake?()
+    }
+
+    @objc private func micItemClicked(_ sender: NSMenuItem) {
+        if sender.representedObject is NSNull {
+            onMicSelected?(nil)
+        } else if let uid = sender.representedObject as? String {
+            onMicSelected?(uid)
+        }
     }
 
     private func applyIcon(for state: ListeningState) {

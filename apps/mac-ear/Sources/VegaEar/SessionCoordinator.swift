@@ -16,6 +16,10 @@ final class SessionCoordinator {
     private var activeSessionId: String?
     private var safetyTimer: DispatchSourceTimer?
     private var paused = false
+    private var rmsAccumulator: [Int16] = []
+    private var rmsLastReportAt = Date()
+    private var bytesSentInSession = 0
+    private var silenceDetector: SilenceDetector?
 
     init(
         deviceId: String,
@@ -100,8 +104,13 @@ final class SessionCoordinator {
 
             let sessionId = UUID().uuidString.lowercased()
             self.activeSessionId = sessionId
+            self.bytesSentInSession = 0
+            self.rmsAccumulator.removeAll(keepingCapacity: true)
+            self.rmsLastReportAt = Date()
+            self.silenceDetector = SilenceDetector()
             self.cues.play(.wake)
             self.status.setState(.listening)
+            NSLog("[VegaEar] Wake detected (score=\(score)), session=\(sessionId)")
 
             let wakeMsg = WakeDetectedMessage(
                 deviceId: self.deviceId,
@@ -133,9 +142,55 @@ final class SessionCoordinator {
         do {
             for frame in try encoder.encode(pcm) {
                 socket.sendAudio(sessionId: sid, opusFrame: frame)
+                bytesSentInSession += frame.count
             }
         } catch {
             NSLog("[VegaEar] encoder error: \(error)")
+        }
+        accumulateAndMaybeReportRms(pcm: pcm)
+
+        if let detector = silenceDetector {
+            switch detector.feed(pcm: pcm) {
+            case .endpoint:
+                NSLog("[VegaEar] local VAD endpoint, ending session=\(sid)")
+                endSessionLocally(sessionId: sid, reason: .vad)
+            case .waiting, .ongoing:
+                break
+            }
+        }
+    }
+
+    private func endSessionLocally(sessionId: String, reason: EarEndReason) {
+        guard activeSessionId == sessionId else { return }
+        socket.sendJSON(EarSessionEndMessage(sessionId: sessionId, reason: reason))
+        cues.play(.endpoint)
+        activeSessionId = nil
+        silenceDetector = nil
+        safetyTimer?.cancel()
+        safetyTimer = nil
+        status.setState(.idle)
+    }
+
+    private func accumulateAndMaybeReportRms(pcm: Data) {
+        let count = pcm.count / MemoryLayout<Int16>.size
+        var samples = [Int16](repeating: 0, count: count)
+        _ = samples.withUnsafeMutableBytes { pcm.copyBytes(to: $0) }
+        rmsAccumulator.append(contentsOf: samples)
+        let now = Date()
+        if now.timeIntervalSince(rmsLastReportAt) >= 1.0, !rmsAccumulator.isEmpty {
+            var sumSquares: Double = 0
+            for s in rmsAccumulator {
+                let f = Double(s)
+                sumSquares += f * f
+            }
+            let rms = sqrt(sumSquares / Double(rmsAccumulator.count))
+            let dbfs = 20 * log10(max(rms, 1) / 32768.0)
+            NSLog(String(
+                format: "[VegaEar] mic RMS=%.0f (%.1f dBFS) samples=%d bytesSent=%d",
+                rms, dbfs, rmsAccumulator.count, bytesSentInSession
+            ))
+            rmsAccumulator.removeAll(keepingCapacity: true)
+            rmsLastReportAt = now
         }
     }
 
@@ -170,10 +225,6 @@ final class SessionCoordinator {
                     }
                 }
             }
-        case .partialTranscript:
-            break
-        case .finalTranscript:
-            break
         case .playCue(let m):
             switch m.cue {
             case .wake: cues.play(.wake)
@@ -182,6 +233,7 @@ final class SessionCoordinator {
             }
         case .sessionEnd(let m):
             serial.async {
+                NSLog("[VegaEar] session_end from Core: reason=\(m.reason.rawValue) detail=\(m.detail ?? "-") bytesSent=\(self.bytesSentInSession)")
                 guard self.activeSessionId == m.sessionId else { return }
                 self.activeSessionId = nil
                 self.safetyTimer?.cancel()
@@ -197,6 +249,10 @@ final class SessionCoordinator {
                     self.status.setState(.error(m.detail ?? "Session ended: \(m.reason.rawValue)"))
                 }
             }
+        case .partialTranscript(let m):
+            NSLog("[VegaEar] partial: \(m.text)")
+        case .finalTranscript(let m):
+            NSLog("[VegaEar] final: \(m.text)")
         }
     }
 

@@ -1,10 +1,15 @@
 import AVFoundation
+import CoreAudio
 import Foundation
 
-// Captures 48 kHz mono PCM from the default input device and broadcasts the
+// Captures 48 kHz mono PCM from the chosen input device and broadcasts the
 // frames to two consumers: the wake-word detector and the session capture
 // pipeline. A 1-second pre-roll ring buffer is retained so a session can
 // include the moments just before the wake word fired.
+//
+// The input device is selected explicitly via `selectDevice(_:)` and
+// underlies AVAudioEngine's input AudioUnit; changing the device requires
+// stopping and restarting the engine.
 
 final class AudioEngine {
     typealias PCMSink = (Data) -> Void
@@ -14,38 +19,49 @@ final class AudioEngine {
     private let queue = DispatchQueue(label: "vega.ear.audio", qos: .userInitiated)
     private var sinks: [PCMSink] = []
     private var preRoll = RingBuffer<Data>(capacityHint: 50)
+    private let targetFormat: AVAudioFormat
+    private var converter: AVAudioConverter?
+    private var converterInputFormat: AVAudioFormat?
+    private(set) var isRunning = false
+    private(set) var currentDevice: MicDevice?
 
     init() throws {
-        let input = engine.inputNode
-        let inputFormat = input.outputFormat(forBus: 0)
-        let targetFormat = AVAudioFormat(
+        targetFormat = AVAudioFormat(
             commonFormat: .pcmFormatInt16,
             sampleRate: sampleRate,
             channels: 1,
             interleaved: true
         )!
+    }
 
-        // Install the tap on the input bus and convert chunks to mono int16 at 48 kHz.
-        input.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
-            guard let self else { return }
-            guard let converted = Self.convert(buffer: buffer, to: targetFormat) else { return }
-            let data = Self.dataFromBuffer(converted)
-            self.queue.async {
-                self.preRoll.push(data)
-                for sink in self.sinks {
-                    sink(data)
-                }
-            }
+    func selectDevice(_ device: MicDevice?) throws {
+        let wasRunning = isRunning
+        if wasRunning { stop() }
+        if let device {
+            try Self.setInputDevice(engine.inputNode, deviceId: device.id)
         }
+        currentDevice = device
+        installTap()
+        if wasRunning { try start() }
     }
 
     func start() throws {
+        if isRunning { return }
+        if engine.inputNode.numberOfInputs == 0 {
+            installTap()
+        }
         engine.prepare()
         try engine.start()
+        isRunning = true
+        NSLog("[VegaEar] AudioEngine started, mic=\(currentDevice?.name ?? "(system default)")")
     }
 
     func stop() {
+        if !isRunning { return }
         engine.stop()
+        engine.inputNode.removeTap(onBus: 0)
+        isRunning = false
+        NSLog("[VegaEar] AudioEngine stopped")
     }
 
     func addSink(_ sink: @escaping PCMSink) {
@@ -58,8 +74,29 @@ final class AudioEngine {
         return copy
     }
 
-    private static func convert(buffer: AVAudioPCMBuffer, to targetFormat: AVAudioFormat) -> AVAudioPCMBuffer? {
-        guard let converter = AVAudioConverter(from: buffer.format, to: targetFormat) else { return nil }
+    private func installTap() {
+        let input = engine.inputNode
+        let inputFormat = input.outputFormat(forBus: 0)
+        input.removeTap(onBus: 0)
+        input.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
+            guard let self else { return }
+            guard let converted = self.convert(buffer: buffer) else { return }
+            let data = Self.dataFromBuffer(converted)
+            self.queue.async {
+                self.preRoll.push(data)
+                for sink in self.sinks {
+                    sink(data)
+                }
+            }
+        }
+    }
+
+    private func convert(buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        if converter == nil || converterInputFormat != buffer.format {
+            converter = AVAudioConverter(from: buffer.format, to: targetFormat)
+            converterInputFormat = buffer.format
+        }
+        guard let converter else { return nil }
         let capacity = AVAudioFrameCount(targetFormat.sampleRate * Double(buffer.frameLength) / buffer.format.sampleRate) + 16
         guard let out = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { return nil }
         var error: NSError?
@@ -83,6 +120,26 @@ final class AudioEngine {
         let byteCount = frameCount * channels * MemoryLayout<Int16>.size
         guard let ptr = buffer.int16ChannelData?[0] else { return Data() }
         return Data(bytes: ptr, count: byteCount)
+    }
+
+    // Bind the input node's underlying HAL AudioUnit to a specific CoreAudio
+    // device. Must run while the engine is stopped.
+    private static func setInputDevice(_ inputNode: AVAudioInputNode, deviceId: AudioDeviceID) throws {
+        guard let unit = inputNode.audioUnit else {
+            throw NSError(domain: "VegaEar.AudioEngine", code: 1, userInfo: [NSLocalizedDescriptionKey: "Input node has no AudioUnit"])
+        }
+        var id = deviceId
+        let status = AudioUnitSetProperty(
+            unit,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &id,
+            UInt32(MemoryLayout<AudioDeviceID>.size)
+        )
+        if status != noErr {
+            throw NSError(domain: "VegaEar.AudioEngine", code: Int(status), userInfo: [NSLocalizedDescriptionKey: "AudioUnitSetProperty(CurrentDevice) failed: \(status)"])
+        }
     }
 }
 
