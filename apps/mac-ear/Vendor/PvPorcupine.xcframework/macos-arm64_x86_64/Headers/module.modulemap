@@ -1,6 +1,0 @@
-module PvPorcupine {
-    header "pv_porcupine.h"
-    header "picovoice.h"
-    export *
-    link "pv_porcupine"
-}

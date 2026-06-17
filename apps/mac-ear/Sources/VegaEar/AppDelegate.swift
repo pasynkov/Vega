@@ -6,13 +6,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusController: StatusItemController!
     private var coordinator: SessionCoordinator!
     private var identity: DeviceIdentityService!
-    private var secrets: SecretStore!
     private var preferences: Preferences!
     private var audio: AudioEngine!
+    private var openWakeWord: OpenWakeWordDetector?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         identity = DeviceIdentityService()
-        secrets = SecretStore()
         preferences = Preferences()
         statusController = StatusItemController()
         checkMicrophonePermission()
@@ -32,6 +31,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusController.onMicSelected = { [weak self] uid in
             self?.applyMicSelection(uid: uid)
         }
+        statusController.onWakeThresholdSelected = { [weak self] value in
+            self?.applyWakeThreshold(value)
+        }
+        statusController.setWakeThreshold(preferences.wakeThreshold)
 
         do {
             audio = try AudioEngine()
@@ -53,11 +56,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             let wakeDetector: WakeWordDetector
             do {
-                let porcupine = try PorcupineDetector(
-                    accessKey: try secrets.porcupineAccessKey(),
-                    audioFrameSink: { /* wired by AudioEngine */ }
-                )
-                wakeDetector = porcupine
+                let oww = try OpenWakeWordDetector(threshold: preferences.wakeThreshold)
+                openWakeWord = oww
+                wakeDetector = oww
             } catch {
                 NSLog("[VegaEar] Wake detector unavailable: \(error). Falling back to NoopWakeDetector.")
                 wakeDetector = NoopWakeDetector()
@@ -134,5 +135,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func refreshMicMenu() {
         let devices = MicDeviceCatalog.list()
         statusController.setMicSnapshot(devices: devices, selectedUID: preferences.micUID)
+    }
+
+    private func applyWakeThreshold(_ value: Double) {
+        preferences.setWakeThreshold(value)
+        openWakeWord?.setThreshold(preferences.wakeThreshold)
+        statusController.setWakeThreshold(preferences.wakeThreshold)
+        NSLog("[VegaEar] wake threshold updated to \(preferences.wakeThreshold)")
     }
 }

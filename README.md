@@ -2,7 +2,7 @@
 
 Personal voice assistant. Two processes:
 
-- `apps/mac-ear` — Swift macOS menu-bar app: microphone capture, "Vega" wake-word detection (Porcupine), OPUS encoding, audible cues.
+- `apps/mac-ear` — Swift macOS menu-bar app: microphone capture, wake-word detection (OpenWakeWord / ONNX), OPUS encoding, audible cues.
 - `apps/core` — NestJS daemon: WebSocket server for any Ear client, Deepgram streaming STT, persisted sessions.
 
 Shared schema lives in `packages/ear-protocol` (TypeScript + Swift mirror).
@@ -25,14 +25,13 @@ Shared schema lives in `packages/ear-protocol` (TypeScript + Swift mirror).
 - Node.js 20+
 - npm 10+
 - Xcode 15+ (for `apps/mac-ear`)
-- Picovoice access key (https://console.picovoice.ai/) — free tier
 - Deepgram API key (https://console.deepgram.com/)
 
 ## Setup
 
 ```bash
 cp .env.example .env
-# Fill in PICOVOICE_ACCESS_KEY and DEEPGRAM_API_KEY in .env
+# Fill in DEEPGRAM_API_KEY in .env
 npm install
 ```
 
@@ -57,15 +56,15 @@ open Package.swift   # opens in Xcode
 On first launch:
 
 1. macOS prompts for microphone permission. Grant it.
-2. The Ear looks for `PICOVOICE_ACCESS_KEY` in Keychain, then falls back to `~/.config/vega/ear.env`.
+2. The Ear loads the bundled OpenWakeWord models from `apps/mac-ear/Sources/VegaEar/Resources/` — no API keys required.
 3. The menu-bar icon shows the listening state (`idle`, `listening`, `streaming`, `error`, `disabled`).
 
 ## Manual smoke test
 
 1. Start Core (`npm run core:dev`). Confirm it logs the bound WS address.
 2. Launch the Mac Ear. Confirm the menu-bar icon enters `idle`.
-3. Say **"Vega"** followed by any phrase (e.g. "Vega, напомни купить молоко").
-4. Hear the `Tink` cue at wake, `Pop` cue at end-of-utterance.
+3. Say **"Janet"** or **"Edna"** followed by any phrase.
+4. Hear the wake cue at wake, `Pop` cue at end-of-utterance.
 5. Check `recordings/<ISO-timestamp>/` for `audio.ogg`, `transcript.txt`, `meta.json`.
 6. Verify `transcript.txt` is non-empty.
 

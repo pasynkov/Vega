@@ -28,17 +28,31 @@ enum ListeningState: Equatable {
     }
 }
 
+struct WakeThresholdPreset {
+    let label: String
+    let value: Double
+}
+
+let wakeThresholdPresets: [WakeThresholdPreset] = [
+    WakeThresholdPreset(label: "Low (0.3)", value: 0.3),
+    WakeThresholdPreset(label: "Default (0.5)", value: 0.5),
+    WakeThresholdPreset(label: "High (0.7)", value: 0.7),
+    WakeThresholdPreset(label: "Very High (0.85)", value: 0.85),
+]
+
 final class StatusItemController: NSObject {
     var onPauseToggle: ((Bool) -> Void)?
     var onQuit: (() -> Void)?
     var onTestWake: (() -> Void)?
     var onStopSession: (() -> Void)?
     var onMicSelected: ((String?) -> Void)?  // nil = system default
+    var onWakeThresholdSelected: ((Double) -> Void)?
 
     // Snapshot supplied by AppDelegate; the submenu reads it via the delegate
     // every time it's about to open so the checkmark is always fresh.
     private var micDevices: [MicDevice] = []
     private var micSelectedUID: String?
+    private var wakeThreshold: Double = Preferences.defaultWakeThreshold
 
     private let statusItem: NSStatusItem
     private let stateMenuItem: NSMenuItem
@@ -46,6 +60,8 @@ final class StatusItemController: NSObject {
     private let testWakeMenuItem: NSMenuItem
     private let micMenuItem: NSMenuItem
     private let micSubmenu: NSMenu
+    private let wakeSensitivityMenuItem: NSMenuItem
+    private let wakeSensitivitySubmenu: NSMenu
     private var paused = false
     private var currentState: ListeningState = .idle
     private var sessionActive = false
@@ -59,6 +75,9 @@ final class StatusItemController: NSObject {
         micMenuItem = NSMenuItem(title: "Microphone", action: nil, keyEquivalent: "")
         micSubmenu = NSMenu(title: "Microphone")
         micMenuItem.submenu = micSubmenu
+        wakeSensitivityMenuItem = NSMenuItem(title: "Wake sensitivity", action: nil, keyEquivalent: "")
+        wakeSensitivitySubmenu = NSMenu(title: "Wake sensitivity")
+        wakeSensitivityMenuItem.submenu = wakeSensitivitySubmenu
         super.init()
 
         toggleMenuItem.action = #selector(toggleClicked)
@@ -66,6 +85,7 @@ final class StatusItemController: NSObject {
         testWakeMenuItem.action = #selector(testWakeClicked)
         testWakeMenuItem.target = self
         micSubmenu.delegate = self
+        wakeSensitivitySubmenu.delegate = self
 
         let quitItem = NSMenuItem(title: "Quit", action: #selector(quitClicked), keyEquivalent: "q")
         quitItem.target = self
@@ -74,12 +94,14 @@ final class StatusItemController: NSObject {
         menu.addItem(stateMenuItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(micMenuItem)
+        menu.addItem(wakeSensitivityMenuItem)
         menu.addItem(toggleMenuItem)
         menu.addItem(testWakeMenuItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(quitItem)
         statusItem.menu = menu
 
+        rebuildWakeSensitivitySubmenu()
         applyIcon(for: .idle)
     }
 
@@ -98,6 +120,32 @@ final class StatusItemController: NSObject {
             self.sessionActive = active
             self.testWakeMenuItem.title = active ? "Stop listening" : "Trigger test wake"
         }
+    }
+
+    func setWakeThreshold(_ value: Double) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.wakeThreshold = value
+            self.rebuildWakeSensitivitySubmenu()
+        }
+    }
+
+    private func rebuildWakeSensitivitySubmenu() {
+        wakeSensitivitySubmenu.autoenablesItems = false
+        wakeSensitivitySubmenu.removeAllItems()
+        for preset in wakeThresholdPresets {
+            let item = NSMenuItem(title: preset.label, action: #selector(wakeSensitivityClicked(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = preset.value
+            item.state = abs(preset.value - wakeThreshold) < 0.0005 ? .on : .off
+            wakeSensitivitySubmenu.addItem(item)
+        }
+        wakeSensitivitySubmenu.update()
+    }
+
+    @objc private func wakeSensitivityClicked(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? Double else { return }
+        onWakeThresholdSelected?(value)
     }
 
     func setMicSnapshot(devices: [MicDevice], selectedUID: String?) {
@@ -169,15 +217,21 @@ final class StatusItemController: NSObject {
 
 extension StatusItemController: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
-        guard menu === micSubmenu else { return }
-        NSLog("[VegaEar] StatusItem.menuNeedsUpdate (micSubmenu)")
-        rebuildMicSubmenu()
+        if menu === micSubmenu {
+            NSLog("[VegaEar] StatusItem.menuNeedsUpdate (micSubmenu)")
+            rebuildMicSubmenu()
+        } else if menu === wakeSensitivitySubmenu {
+            rebuildWakeSensitivitySubmenu()
+        }
     }
 
     func menuWillOpen(_ menu: NSMenu) {
-        guard menu === micSubmenu else { return }
-        NSLog("[VegaEar] StatusItem.menuWillOpen (micSubmenu)")
-        rebuildMicSubmenu()
+        if menu === micSubmenu {
+            NSLog("[VegaEar] StatusItem.menuWillOpen (micSubmenu)")
+            rebuildMicSubmenu()
+        } else if menu === wakeSensitivitySubmenu {
+            rebuildWakeSensitivitySubmenu()
+        }
     }
 }
 
@@ -196,6 +250,10 @@ extension StatusItemController {
                 want = .off
             }
             menuItem.state = want
+        } else if menuItem.action == #selector(wakeSensitivityClicked(_:)) {
+            if let value = menuItem.representedObject as? Double {
+                menuItem.state = abs(value - wakeThreshold) < 0.0005 ? .on : .off
+            }
         }
         return true
     }

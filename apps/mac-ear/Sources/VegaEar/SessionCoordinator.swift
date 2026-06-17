@@ -102,7 +102,7 @@ final class SessionCoordinator {
     }
 
     // Public hook so a debug UI (menu-bar "Trigger test wake") or a future
-    // remote trigger can start a session without going through Porcupine.
+    // remote trigger can start a session without going through the wake detector.
     func simulateWake() {
         NSLog("[VegaEar] simulateWake called")
         handleWake(score: 1.0)
@@ -371,7 +371,7 @@ final class SessionCoordinator {
         armSafetyTimer(for: sessionId)
     }
 
-    // Naive decimation to 16 kHz for Porcupine. Computes stride from the
+    // Naive decimation to 16 kHz for the wake detector. Computes stride from the
     // actual capture rate so it works whether the device delivered 48 kHz
     // (built-in mic) or 16 kHz (AirPods HFP).
     private func downsample48kTo16k(_ pcm: Data) -> Data {

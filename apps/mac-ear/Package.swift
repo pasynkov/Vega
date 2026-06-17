@@ -10,23 +10,19 @@ let package = Package(
         .executable(name: "VegaEar", targets: ["VegaEar"])
     ],
     dependencies: [
-        .package(path: "../../packages/ear-protocol/swift")
+        .package(path: "../../packages/ear-protocol/swift"),
+        .package(url: "https://github.com/microsoft/onnxruntime-swift-package-manager", exact: "1.20.0")
     ],
     targets: [
-        .binaryTarget(
-            name: "PvPorcupine",
-            path: "Vendor/PvPorcupine.xcframework"
-        ),
         .executableTarget(
             name: "VegaEar",
             dependencies: [
                 .product(name: "EarProtocol", package: "swift"),
-                "PvPorcupine"
+                .product(name: "onnxruntime", package: "onnxruntime-swift-package-manager")
             ],
             path: "Sources/VegaEar",
             resources: [
-                .process("Resources"),
-                .copy("../../Vendor/PvModel/porcupine_params.pv")
+                .process("Resources")
             ]
         ),
         .testTarget(
