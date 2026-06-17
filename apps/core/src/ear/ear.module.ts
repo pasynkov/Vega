@@ -15,7 +15,7 @@ import { RecordingStore } from "../recording/recording-store";
     DeepgramClient,
     RecordingStore,
   ],
-  exports: [SessionService],
+  exports: [SessionService, EarRegistry],
 })
 export class EarModule implements OnApplicationBootstrap, OnApplicationShutdown {
   constructor(

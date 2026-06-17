@@ -1,17 +1,27 @@
 import { makeTool } from "../agents/tool-factory";
-import type { AgentTool } from "../agents/agent.types";
-import { SessionService, LONG_NOTE_SILENCE_CAP_MS } from "../session/session.service";
+import type { AgentTool, AgentSpec } from "../agents/agent.types";
+import { SessionService } from "../session/session.service";
+import { EarSessionRouter } from "../ear-sessions/ear-session-router.service";
+import { ToolUsedOutsideSessionError } from "../ear-sessions/ear-session.errors";
 import { NotesStorageService } from "./notes-storage.service";
 import {
-  EnableLongNoteModeDto,
-  EndLongNoteModeDto,
+  BeginDictationDto,
+  DiscardNoteDto,
+  FinalizeNoteDto,
   SaveShortNoteDto,
 } from "./notes.dtos";
+
+export interface NotesToolBundle {
+  supervisorTools: AgentTool[];
+  sessionTools: AgentTool[];
+}
 
 export function buildNotesTools(
   storage: NotesStorageService,
   sessions: SessionService,
-): AgentTool[] {
+  router: EarSessionRouter,
+  sessionSpecRef: { spec: AgentSpec | null },
+): NotesToolBundle {
   const saveShortNote = makeTool({
     dto: SaveShortNoteDto,
     name: "save_short_note",
@@ -26,33 +36,47 @@ export function buildNotesTools(
     },
   });
 
-  const enableLongNoteMode = makeTool({
-    dto: EnableLongNoteModeDto,
-    name: "enable_long_note_mode",
+  const beginDictation = makeTool({
+    dto: BeginDictationDto,
+    name: "begin_dictation",
     description:
-      "Arm the Ear to open a FRESH capture session under long-note mode. The original short utterance is already closed; this tool asks the Ear to start a new session right away with a relaxed silence cap (60s) and play the Submarine cue so the user knows they can dictate freely with pauses. Use ONLY when the user signals they are about to dictate a long-form note.",
-    handler: async (_dto) => {
-      const armed = sessions.armEarCapture("long_note");
-      if (!armed) {
-        return { ok: false, reason: "no-ear-connection" };
+      "Открой длинную сессию диктовки. Текущая сессия (короткая) уже закрылась после endpoint; этот tool попросит Ear открыть СВЕЖУЮ сессию в long_note режиме (Submarine cue, 60s silence cap), которой будет владеть session-bound notes-агент. Используй ТОЛЬКО когда пользователь явно хочет надиктовать длинную заметку.",
+    handler: async () => {
+      const spec = sessionSpecRef.spec;
+      if (!spec) {
+        return { ok: false, reason: "notes-session-spec-not-ready" };
       }
-      return { ok: true, mode: "long_note", silenceCapMs: LONG_NOTE_SILENCE_CAP_MS };
+      const result = router.arm({ ownerSpec: spec, mode: "long_note" });
+      return result;
     },
   });
 
-  const endLongNoteMode = makeTool({
-    dto: EndLongNoteModeDto,
-    name: "end_long_note_mode",
+  const finalizeNote = makeTool({
+    dto: FinalizeNoteDto,
+    name: "finalize_note",
     description:
-      "Save the accumulated long note text and terminate the active session with a normal endpoint cue. Use when the user signals they have finished dictating the long note.",
+      "Завершить длинную заметку: перезаписать файл очищенным cleanText и закрыть Ear-сессию. Используется ТОЛЬКО внутри session-bound диктовки. Возвращает release-сигнал.",
     handler: async (dto, ctx) => {
-      const { path } = storage.saveNote(dto.cleanText);
-      if (ctx.sessionId && sessions.hasActiveSession(ctx.sessionId)) {
-        await sessions.terminateExternal(ctx.sessionId, "endpoint", "core:long_note_end");
-      }
-      return { ok: true, path };
+      if (!ctx.earSession) throw new ToolUsedOutsideSessionError("finalize_note");
+      const { path } = storage.finalizeInProgress(ctx.earSession.sessionId, dto.cleanText);
+      return { ok: true, path, release: true as const, reason: "endpoint" as const };
     },
   });
 
-  return [saveShortNote, enableLongNoteMode, endLongNoteMode];
+  const discardNote = makeTool({
+    dto: DiscardNoteDto,
+    name: "discard_note",
+    description:
+      "Сбросить in-progress заметку и закрыть Ear-сессию (например, пользователь передумал или поток шумовой). Используется ТОЛЬКО внутри session-bound диктовки. Возвращает release-сигнал.",
+    handler: async (dto, ctx) => {
+      if (!ctx.earSession) throw new ToolUsedOutsideSessionError("discard_note");
+      storage.discardInProgress(ctx.earSession.sessionId, dto.reason);
+      return { ok: true, release: true as const, reason: "user" as const, discardReason: dto.reason };
+    },
+  });
+
+  return {
+    supervisorTools: [saveShortNote, beginDictation],
+    sessionTools: [finalizeNote, discardNote],
+  };
 }

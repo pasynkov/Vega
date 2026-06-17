@@ -1,6 +1,6 @@
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { Command } from "@langchain/langgraph";
-import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import type { BaseMessage } from "@langchain/core/messages";
 import type { AgentOutput, AgentSpec } from "./agent.types";
 import type { VegaStateType } from "./supervisor/state";
@@ -25,15 +25,20 @@ export function makeSubAgentNode({ spec, llm }: BuildSubAgentArgs) {
 
   return async (state: VegaStateType): Promise<Command> => {
     const task = extractSupervisorTask(state.messages);
+    const startedAt = Date.now();
+    // eslint-disable-next-line no-console
+    console.log(`[SubAgent:${spec.name}] → invoke task="${task.slice(0, 160)}"`);
     try {
       const result = await agent.invoke({
-        messages: [
-          new SystemMessage(`Domain: ${spec.name}.`),
-          new HumanMessage(task),
-        ],
+        messages: [new HumanMessage(task)],
       });
       const finalMsg = lastAssistantMessage(result.messages);
       const output = parseAgentOutput(finalMsg);
+      const toolCalls = countToolCalls(result.messages);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[SubAgent:${spec.name}] ← status=${output.status} tools=${toolCalls} ms=${Date.now() - startedAt} summary="${output.summary.slice(0, 160)}"`,
+      );
       return new Command({
         goto: "supervisor",
         update: {
@@ -46,6 +51,10 @@ export function makeSubAgentNode({ spec, llm }: BuildSubAgentArgs) {
         status: "error",
         summary: err instanceof Error ? err.message : String(err),
       };
+      // eslint-disable-next-line no-console
+      console.log(
+        `[SubAgent:${spec.name}] ← ERROR ms=${Date.now() - startedAt} err=${output.summary.slice(0, 160)}`,
+      );
       return new Command({
         goto: "supervisor",
         update: {
@@ -55,6 +64,15 @@ export function makeSubAgentNode({ spec, llm }: BuildSubAgentArgs) {
       });
     }
   };
+}
+
+function countToolCalls(messages: BaseMessage[]): number {
+  let n = 0;
+  for (const m of messages) {
+    const calls = (m as any).tool_calls;
+    if (Array.isArray(calls)) n += calls.length;
+  }
+  return n;
 }
 
 function extractSupervisorTask(messages: BaseMessage[]): string {

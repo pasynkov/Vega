@@ -10,7 +10,7 @@ import { SupervisorModule } from "./agents/supervisor/supervisor.module";
 import { MemoryModule } from "./memory/memory.module";
 import { NotesModule } from "./notes/notes.module";
 import { ConversationModule } from "./conversation/conversation.module";
-import { SessionWatcherModule } from "./session-watcher/session-watcher.module";
+import { EarSessionsModule } from "./ear-sessions/ear-sessions.module";
 
 // Use pino-pretty as a synchronous stream rather than a worker-thread
 // transport. The transport keeps the event loop alive after app.close()
@@ -50,10 +50,10 @@ const prettyStream = pretty({
     AgentSystemModule,
     SupervisorModule,
     EarModule,
+    ConversationModule,
+    EarSessionsModule,
     MemoryModule,
     NotesModule,
-    ConversationModule,
-    SessionWatcherModule,
   ],
 })
 export class AppModule {}

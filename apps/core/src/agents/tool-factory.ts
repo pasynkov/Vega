@@ -15,8 +15,11 @@ export class ToolValidationError extends Error {
   }
 }
 
+import type { EarSessionHandle } from "../ear-sessions/ear-session-handle";
+
 export interface ToolHandlerContext {
   sessionId?: string;
+  earSession?: EarSessionHandle;
 }
 
 export interface MakeToolParams<DtoT extends object, ResultT> {
@@ -66,7 +69,11 @@ function extractToolContext(runtime: unknown): ToolHandlerContext {
   const r = runtime as Record<string, unknown>;
   const configurable = ((r.configurable as Record<string, unknown>) ?? (r.config as { configurable?: Record<string, unknown> })?.configurable) ?? undefined;
   const threadId = configurable && typeof configurable.thread_id === "string" ? (configurable.thread_id as string) : undefined;
-  return { sessionId: threadId };
+  const earSession = configurable && typeof configurable.ear_session === "object" && configurable.ear_session !== null
+    ? (configurable.ear_session as EarSessionHandle)
+    : undefined;
+  const sessionId = earSession?.sessionId ?? threadId;
+  return { sessionId, earSession };
 }
 
 // Exposed so the boot-time smoke test can validate every DTO before any

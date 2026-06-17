@@ -21,6 +21,7 @@ export const CueEnum = z.enum([
   "ack_thinking",
   "ack_success",
   "ack_error",
+  "ack_unknown",
 ]);
 export type Cue = z.infer<typeof CueEnum>;
 

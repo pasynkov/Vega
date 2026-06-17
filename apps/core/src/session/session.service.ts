@@ -18,8 +18,23 @@ import { DeepgramClient, DeepgramSession } from "../deepgram/deepgram.client";
 import { EnvConfig } from "../config/env";
 import { RecordingStore, SessionRecord } from "../recording/recording-store";
 import { SilenceDetector } from "./silence-detector";
+import type { AgentSpec } from "../agents/agent.types";
 
 type TranscriptListener = (sessionId: string, kind: "partial" | "final", text: string) => void;
+type EndpointListener = (sessionId: string, finalText: string) => void | Promise<void>;
+type FinalRoute = "default" | "owner";
+
+export interface SessionRouterAttachment {
+  ownerOf(sessionId: string): AgentSpec | undefined;
+  bindOnSessionStart(message: SessionStartMessage, deviceId: string): { sessionId: string } | undefined;
+  release(sessionId: string): void;
+}
+
+export interface OwnedSessionController {
+  pushFinal(text: string): void;
+  signalEnd(reason: "user" | "endpoint" | "timeout" | "stt_error"): void;
+  dispose(): void;
+}
 
 interface InFlightSession extends SessionRecord {
   shortId: bigint;
@@ -31,6 +46,7 @@ interface InFlightSession extends SessionRecord {
   vadEndpointSuppressed: boolean;
   mode: SessionMode;
   closed: boolean;
+  ownerController: OwnedSessionController | null;
 }
 
 const CORE_SILENCE_CAP_MS = 5_000;
@@ -40,6 +56,10 @@ export const LONG_NOTE_SILENCE_CAP_MS = 60_000;
 export class SessionService {
   private readonly bySessionId = new Map<string, InFlightSession>();
   private readonly transcriptListeners = new Set<TranscriptListener>();
+  private readonly endpointListeners = new Set<EndpointListener>();
+  private lastUnknownShortIdLogged: string | null = null;
+  private router: SessionRouterAttachment | null = null;
+  private ownerStarter: ((session: InFlightSession, ownerSpec: AgentSpec) => OwnedSessionController) | null = null;
 
   constructor(
     @InjectPinoLogger(SessionService.name) private readonly logger: PinoLogger,
@@ -49,11 +69,28 @@ export class SessionService {
     private readonly store: RecordingStore,
   ) {}
 
-  // Subscribe to transcript events on every active session. Used by
-  // SessionWatcher to drive in-session LLM checks.
   addTranscriptListener(listener: TranscriptListener): () => void {
     this.transcriptListeners.add(listener);
     return () => this.transcriptListeners.delete(listener);
+  }
+
+  attachEndpointListener(listener: EndpointListener): () => void {
+    this.endpointListeners.add(listener);
+    return () => this.endpointListeners.delete(listener);
+  }
+
+  attachRouter(router: SessionRouterAttachment): void {
+    this.router = router;
+  }
+
+  attachOwnerStarter(
+    starter: (sessionId: string, ownerSpec: AgentSpec) => OwnedSessionController,
+  ): void {
+    this.ownerStarter = (session, ownerSpec) => starter(session.sessionId, ownerSpec);
+  }
+
+  isOwnedSession(sessionId: string): boolean {
+    return !!this.bySessionId.get(sessionId)?.ownerController;
   }
 
   // Surfacing API for tools that need to mutate session state from inside
@@ -98,27 +135,6 @@ export class SessionService {
     this.sendToEar(session, msg);
     this.logger.debug({ sessionId, cue }, "Cue emitted");
     return true;
-  }
-
-  // Tells the connected Ear to open a fresh capture session under the given
-  // mode without requiring a wake-word. Used by the notes domain's
-  // enable_long_note_mode tool to arm the long-note session after the
-  // original short utterance closed.
-  armEarCapture(mode: SessionMode): boolean {
-    const conn = this.registry.list()[0];
-    if (!conn) {
-      this.logger.warn({ mode }, "armEarCapture: no Ear connected");
-      return false;
-    }
-    const msg = { type: "arm_capture" as const, mode };
-    try {
-      conn.socket.send(JSON.stringify(msg));
-      this.logger.info({ mode, deviceId: conn.deviceId }, "arm_capture sent to Ear");
-      return true;
-    } catch (err) {
-      this.logger.warn({ err, mode }, "armEarCapture: send failed");
-      return false;
-    }
   }
 
   async terminateExternal(
@@ -182,7 +198,26 @@ export class SessionService {
       vadEndpointSuppressed: initialMode === "long_note",
       mode: initialMode,
       closed: false,
+      ownerController: null,
     };
+
+    const ownership = this.router?.bindOnSessionStart(message, connection.deviceId);
+    if (ownership && this.ownerStarter) {
+      const ownerSpec = this.router!.ownerOf(message.sessionId);
+      if (ownerSpec) {
+        try {
+          session.ownerController = this.ownerStarter(session, ownerSpec);
+          this.logger.info(
+            { sessionId: session.sessionId, owner: ownerSpec.name },
+            "Session bound to owner runner",
+          );
+        } catch (err) {
+          this.logger.error({ err, sessionId: session.sessionId }, "Owner runner failed to start");
+          this.router?.release(session.sessionId);
+        }
+      }
+    }
+
     this.armSilenceTimer(session);
 
     const deepgram = this.deepgram.open(
@@ -224,14 +259,26 @@ export class SessionService {
       }
     }
     if (!target) {
-      this.logger.debug({ sessionShortId: sessionShortId.toString() }, "Audio frame for unknown session, dropping");
+      const sidStr = sessionShortId.toString();
+      if (this.lastUnknownShortIdLogged !== sidStr) {
+        this.logger.debug(
+          { sessionShortId: sidStr },
+          "Audio frame for unknown session, dropping (further frames for same shortId silently dropped)",
+        );
+        this.lastUnknownShortIdLogged = sidStr;
+      }
       return;
     }
+    this.lastUnknownShortIdLogged = null;
     target.audioBuffers.push(Buffer.from(payload));
     target.deepgram?.send(payload);
 
+    // In suppressed mode (long_note) the VAD's decision is ignored and
+    // running the detector just spams "VAD endpoint reached" forever while
+    // the user pauses. Skip the call entirely.
+    if (target.vadEndpointSuppressed) return;
     const decision = target.vad.feed(payload);
-    if (decision === "endpoint" && !target.vadEndpointSuppressed) {
+    if (decision === "endpoint") {
       void this.terminate(target, "endpoint", "core:vad");
     }
   }
@@ -240,6 +287,14 @@ export class SessionService {
     const session = this.bySessionId.get(message.sessionId);
     if (!session) return;
     const reason: CoreEndReason = message.reason === "user" ? "user" : "timeout";
+    if (session.ownerController) {
+      try {
+        session.ownerController.signalEnd(reason === "user" ? "user" : reason);
+      } catch (err) {
+        this.logger.warn({ err, sessionId: session.sessionId }, "Owner signalEnd threw");
+      }
+      return;
+    }
     await this.terminate(session, reason, `ear:${message.reason}`);
   }
 
@@ -278,6 +333,13 @@ export class SessionService {
     if (confidence !== null) session.transcriptConfidence = confidence;
     this.armSilenceTimer(session);
     this.notifyTranscriptListeners(session.sessionId, "final", text);
+    if (session.ownerController) {
+      try {
+        session.ownerController.pushFinal(text);
+      } catch (err) {
+        this.logger.warn({ err, sessionId: session.sessionId }, "Owner pushFinal threw");
+      }
+    }
   }
 
   private notifyTranscriptListeners(sessionId: string, kind: "partial" | "final", text: string): void {
@@ -376,13 +438,40 @@ export class SessionService {
     };
     this.sendToEar(session, endMsg);
 
+    const finalText = session.finals.join(" ").trim();
+    // Deepgram sometimes never elevates a partial to final when the user
+    // stops mid-utterance (Ear's VAD beats Deepgram). Fall back to the last
+    // partial so a real spoken phrase still reaches the orchestrator.
+    const lastPartial = session.partials.length > 0
+      ? session.partials[session.partials.length - 1].trim()
+      : "";
+    const dispatchText = finalText.length > 0 ? finalText : lastPartial;
     this.registry.setActiveSession(session.deviceId, null);
     this.bySessionId.delete(session.sessionId);
+
+    if (session.ownerController) {
+      try { session.ownerController.dispose(); } catch { /* ignore */ }
+    }
+    this.router?.release(session.sessionId);
+
+    if (isNaturalEnd(initiator) && !session.ownerController && dispatchText.length > 0) {
+      void this.fireEndpointListeners(session.sessionId, dispatchText);
+    }
 
     try {
       await this.store.persist(session);
     } catch (err) {
       this.logger.error({ err, sessionId: session.sessionId }, "Failed to persist recording");
+    }
+  }
+
+  private async fireEndpointListeners(sessionId: string, finalText: string): Promise<void> {
+    for (const listener of this.endpointListeners) {
+      try {
+        await listener(sessionId, finalText);
+      } catch (err) {
+        this.logger.warn({ err, sessionId }, "Endpoint listener threw, continuing");
+      }
     }
   }
 
@@ -399,4 +488,15 @@ export class SessionService {
   private findConnection(deviceId: string): EarConnection | undefined {
     return this.registry.list().find((c) => c.deviceId === deviceId);
   }
+}
+
+const NATURAL_END_INITIATORS = new Set<string>([
+  "core:vad",
+  "core:silence_cap",
+  "ear:vad",
+  "ear:user",
+]);
+
+function isNaturalEnd(initiator: string): boolean {
+  return NATURAL_END_INITIATORS.has(initiator);
 }

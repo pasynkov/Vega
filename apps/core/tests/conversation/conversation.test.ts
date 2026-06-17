@@ -69,7 +69,7 @@ describeIfKey("ConversationService integration", () => {
       const { mod, conv } = await bootstrap();
       modA = mod;
       const r1 = await conv.handleTurn("default", "запомни что я люблю эспрессо");
-      expect(typeof r1).toBe("string");
+      expect(typeof r1.reply).toBe("string");
       await mod.close();
       modA = undefined;
     }
@@ -77,9 +77,9 @@ describeIfKey("ConversationService integration", () => {
       const { mod, conv } = await bootstrap();
       modB = mod;
       const r2 = await conv.handleTurn("default", "что я обычно пью утром?");
-      expect(typeof r2).toBe("string");
+      expect(typeof r2.reply).toBe("string");
       // Loose check: reply should reference espresso/coffee semantics.
-      expect(r2.toLowerCase()).toMatch(/эспрессо|кофе|espresso/);
+      expect(r2.reply.toLowerCase()).toMatch(/эспрессо|кофе|espresso/);
       await mod.close();
       modB = undefined;
     }

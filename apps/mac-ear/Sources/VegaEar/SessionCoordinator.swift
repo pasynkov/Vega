@@ -315,6 +315,7 @@ final class SessionCoordinator {
             case .ackThinking: cues.play(.ackThinking)
             case .ackSuccess: cues.play(.ackSuccess)
             case .ackError: cues.play(.ackError)
+            case .ackUnknown: cues.play(.ackUnknown)
             }
         case .sessionEnd(let m):
             serial.async {
