@@ -115,4 +115,4 @@
 ## 18. Wrap-up
 
 - [x] 18.1 Update `MEMORY.md` (project memory under `.claude/projects/.../memory/`) only if any project-level decision deviates from this plan during implementation. _Design refactored mid-implementation: wire codec moved from `opus` to `linear16`; ffmpeg-kit-macos removed from scope; OGG/OPUS encoding moved to Core via ffmpeg-static; Porcupine vendored as a local xcframework because the official Apple SPM is iOS-only. Captured in design.md, specs, and README — no memory entries needed beyond what's already tracked._
-- [ ] 18.2 Commit in coherent slices: protocol package, Core scaffolding, Core sessions, Ear scaffolding, Ear audio, Ear orchestration, docs. _Pending — no git commits made yet in this session._
+- [x] 18.2 Commit in coherent slices: protocol package, Core scaffolding, Core sessions, Ear scaffolding, Ear audio, Ear orchestration, docs. _Done: 7 commits — repo init, .claude tracking, gitignore fix, openspec planning, ear-protocol, Core (sessions + persistence bundled), Mac Ear (scaffold + audio + wake + orchestration bundled)._
