@@ -53,6 +53,12 @@ final class AudioEngine {
         }
         currentDevice = device
 
+        // Force the input AudioUnit to re-resolve its format under the new
+        // device BEFORE we query inputNode.outputFormat(forBus:) — otherwise
+        // that getter can block / return stale state on macOS.
+        engine.prepare()
+        NSLog("[VegaEar] engine.prepare() returned")
+
         installTap()
         NSLog("[VegaEar] tap installed (format=\(engine.inputNode.outputFormat(forBus: 0)))")
 
