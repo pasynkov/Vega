@@ -11,9 +11,11 @@ import { EarModule } from "./ear/ear.module";
         transport: {
           target: "pino-pretty",
           options: {
+            colorize: true,
             singleLine: true,
-            translateTime: "SYS:standard",
+            translateTime: "HH:MM:ss.l",
             ignore: "pid,hostname",
+            messageFormat: "[{context}] {msg}",
           },
         },
         redact: {

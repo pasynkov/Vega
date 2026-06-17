@@ -53,6 +53,9 @@ export class EarGateway {
   private onConnection(socket: WebSocket, req: IncomingMessage): void {
     const remote = req.socket.remoteAddress ?? "unknown";
     this.logger.info({ remote }, "Ear connecting");
+    let binaryFrameCount = 0;
+    let binaryByteCount = 0;
+    let binaryReportAt = Date.now();
 
     const registerTimer = setTimeout(() => {
       this.logger.warn({ remote }, "Ear did not register in time, closing");
@@ -61,10 +64,18 @@ export class EarGateway {
 
     let connection: EarConnection | undefined;
 
+    const binFrames = { value: 0 };
+    const binBytes = { value: 0 };
+    const binLastAt = { value: Date.now() };
+
     socket.on("message", (data, isBinary) => {
       try {
         if (isBinary) {
-          this.handleBinary(connection, data as Buffer);
+          const buf = data as Buffer;
+          if (connection) {
+            this.reportBinaryThroughput(connection.deviceId, binFrames, binBytes, binLastAt, buf.byteLength);
+          }
+          this.handleBinary(connection, buf);
           return;
         }
         const text = (data as Buffer).toString("utf-8");
@@ -143,6 +154,35 @@ export class EarGateway {
       this.sessions.forwardAudio(connection, sessionShortId, payload);
     } catch (err) {
       this.logger.warn({ err }, "Bad binary frame");
+    }
+  }
+
+  // Rate-limited summary so the operator can see audio is flowing without
+  // a log line per ~21 ms frame.
+  private reportBinaryThroughput(
+    deviceId: string,
+    frameCount: { value: number },
+    byteCount: { value: number },
+    lastAt: { value: number },
+    bytes: number,
+  ): void {
+    frameCount.value += 1;
+    byteCount.value += bytes;
+    const now = Date.now();
+    const elapsed = now - lastAt.value;
+    if (elapsed >= 1_000) {
+      this.logger.info(
+        {
+          deviceId,
+          frames: frameCount.value,
+          bytes: byteCount.value,
+          kBperSec: ((byteCount.value / (elapsed / 1000)) / 1024).toFixed(1),
+        },
+        "WS binary throughput",
+      );
+      frameCount.value = 0;
+      byteCount.value = 0;
+      lastAt.value = now;
     }
   }
 
