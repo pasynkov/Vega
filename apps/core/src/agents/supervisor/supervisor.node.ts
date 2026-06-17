@@ -5,8 +5,9 @@ import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages
 import type { BaseMessage } from "@langchain/core/messages";
 import { AgentRegistry } from "../agent-registry.service";
 import { LlmService } from "../../llm/llm.module";
-import { END_NODE, makeRouteValidator } from "./route.schema";
+import { END_NODE, RouteSchema, makeRouteValidator } from "./route.schema";
 import { buildSupervisorPrompt } from "./supervisor.prompt";
+import { buildJsonSchema } from "../tool-factory";
 import type { VegaStateType } from "./state";
 
 interface RouteOutput {
@@ -15,7 +16,7 @@ interface RouteOutput {
   speakText?: string;
 }
 
-const FALLBACK_REPLY = "Я не понял, повтори?";
+const FALLBACK_REPLY = "";
 
 @Injectable()
 export class SupervisorNode {
@@ -25,7 +26,6 @@ export class SupervisorNode {
     private readonly llm: LlmService,
   ) {}
 
-  // Bind to a graph node — returns the node function.
   asNode(): (state: VegaStateType) => Promise<Command> {
     return (state) => this.run(state);
   }
@@ -40,8 +40,9 @@ export class SupervisorNode {
       new SystemMessage(systemPrompt),
       ...state.messages,
     ];
+    ensureEndsWithHuman(baseMessages);
 
-    const route = await this.callRouter(baseMessages, validator);
+    const route = await this.callRouter(baseMessages, activeNames, validator);
     if (!route) {
       this.logger.warn({}, "Supervisor falling back to clarification reply");
       return new Command({
@@ -60,7 +61,10 @@ export class SupervisorNode {
     }
 
     const task = route.task ?? "";
-    this.logger.info({ goto: route.goto, task: task.slice(0, 80) }, "Supervisor routing to domain");
+    this.logger.info(
+      { goto: route.goto, taskLen: task.length, task: task.slice(0, 160) },
+      "Supervisor routing to domain",
+    );
     return new Command({
       goto: route.goto,
       update: {
@@ -70,67 +74,113 @@ export class SupervisorNode {
     });
   }
 
+  // Use Anthropic's native tool-use to force a single `route` tool call.
+  // Two reasons over withStructuredOutput: (a) we can pass tool_choice to
+  // force the model to call route exactly once, (b) tool-call args bypass
+  // the JSON-mode assistant-prefill paths that broke on Sonnet 4.5+.
   private async callRouter(
     messages: BaseMessage[],
+    activeDomains: string[],
     validator: (raw: unknown) => string[],
   ): Promise<RouteOutput | null> {
-    // Use a JSON-mode structured-output schema since the spec instructs
-    // the supervisor to call withStructuredOutput. class-validator does
-    // the post-hoc enum/required check because LangChain's schema cannot
-    // know the dynamic domain list.
     const model = this.llm.getModel();
-    const schema = this.routerJsonSchema();
-    // Sonnet 4.5+ rejects the default function-calling prefill ("conversation
-    // must end with a user message"). Use the native jsonSchema method which
-    // does not prefill an assistant turn.
-    const structured = model.withStructuredOutput(schema, {
-      name: "RouteSchema",
-      method: "jsonSchema",
-    } as any);
+    const schema = buildJsonSchema(RouteSchema);
+    // Patch dynamic enum: active domain names + __end__. The DTO can't
+    // declare a static @IsIn because the domain list is built at runtime
+    // from the AgentRegistry, but we still want the LLM-facing schema to
+    // constrain `goto` to the actual choices.
+    const props = (schema as any).properties as Record<string, any>;
+    if (props?.goto) {
+      props.goto.enum = [...activeDomains, END_NODE];
+      props.goto.description = 'Domain name or "__end__".';
+    }
+    if (props?.task) {
+      props.task.description = "Natural-language task description (required when goto is a domain).";
+    }
+    if (props?.speakText) {
+      props.speakText.description = 'Always "" — TTS is not wired yet.';
+    }
+    (schema as any).required = ["goto"];
+    (schema as any).additionalProperties = false;
+    const routeTool = {
+      name: "route",
+      description: "Route the turn to a domain or end it.",
+      input_schema: schema,
+    };
+    const bound = (model as any).bindTools([routeTool], {
+      tool_choice: { type: "tool", name: "route" },
+    });
 
     for (let attempt = 0; attempt < 2; attempt++) {
-      let raw: unknown;
+      let reply: AIMessage;
       try {
-        raw = await structured.invoke(messages);
+        reply = (await bound.invoke(messages)) as AIMessage;
       } catch (err) {
-        this.logger.warn({ attempt, err }, "Supervisor structured output threw");
+        this.logger.warn({ attempt, err }, "Supervisor tool-call invoke threw");
         continue;
       }
-      const errors = validator(raw);
-      if (errors.length === 0) {
-        return raw as RouteOutput;
+      const call = extractRouteCall(reply);
+      if (!call) {
+        this.logger.warn({ attempt }, "Supervisor reply contained no tool call");
+        messages = [
+          ...messages,
+          reply,
+          new HumanMessage("Tool call missing — call the `route` tool now."),
+        ];
+        continue;
       }
-      this.logger.warn({ attempt, errors, raw }, "Supervisor route validation failed");
+      const errors = validator(call);
+      if (errors.length === 0) {
+        return call as unknown as RouteOutput;
+      }
+      this.logger.warn({ attempt, errors, call }, "Supervisor route validation failed");
       messages = [
         ...messages,
-        new SystemMessage(
-          `Previous routing decision was invalid: ${errors.join("; ")}. Return a valid RouteSchema.`,
+        reply,
+        new HumanMessage(
+          `Previous route call was invalid: ${errors.join("; ")}. Call \`route\` again with valid args.`,
         ),
       ];
     }
     return null;
   }
+}
 
-  private routerJsonSchema(): Record<string, unknown> {
-    return {
-      type: "object",
-      title: "RouteSchema",
-      properties: {
-        goto: {
-          type: "string",
-          description: 'One of the active domain names or the literal "__end__".',
-        },
-        task: {
-          type: "string",
-          description: "Natural-language description of the work for the chosen domain (required when goto is a domain).",
-        },
-        speakText: {
-          type: "string",
-          description: "Literal reply to surface to the user (required when goto is __end__).",
-        },
-      },
-      required: ["goto"],
-      additionalProperties: false,
-    };
+function extractRouteCall(message: AIMessage): Record<string, unknown> | null {
+  const calls = (message as any).tool_calls as Array<{ name: string; args?: unknown }> | undefined;
+  if (calls && calls.length > 0) {
+    const call = calls.find((c) => c.name === "route") ?? calls[0];
+    if (call && typeof call.args === "object" && call.args !== null) {
+      return call.args as Record<string, unknown>;
+    }
   }
+  return null;
+}
+
+function ensureEndsWithHuman(messages: BaseMessage[]): void {
+  const last = messages[messages.length - 1];
+  if (last instanceof HumanMessage) return;
+  if (last instanceof AIMessage && typeof (last as any).name === "string" && (last as any).name) {
+    const name = (last as any).name as string;
+    const raw = typeof last.content === "string" ? last.content : "";
+    let summary = "";
+    let status = "";
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        if (typeof parsed.summary === "string") summary = parsed.summary;
+        if (typeof parsed.status === "string") status = parsed.status;
+      }
+    } catch { /* not JSON */ }
+    const detail = [status && `status=${status}`, summary && `summary="${summary}"`]
+      .filter(Boolean)
+      .join(", ");
+    messages.push(
+      new HumanMessage(
+        `Домен "${name}" завершил ход${detail ? ` (${detail})` : ""}. Вызови route с goto="__end__" и speakText="" если задача решена. Иначе — маршрутизируй в ДРУГОЙ домен.`,
+      ),
+    );
+    return;
+  }
+  messages.push(new HumanMessage("Call the `route` tool to choose the next domain or __end__."));
 }

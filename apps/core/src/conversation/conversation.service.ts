@@ -5,7 +5,14 @@ import type { BaseMessage } from "@langchain/core/messages";
 import { GraphFactory } from "../agents/graph.factory";
 import { SessionRegistry } from "./session-registry.service";
 
-const FALLBACK_REPLY = "Сейчас не могу ответить, попробуй ещё раз.";
+const FALLBACK_REPLY = "";
+
+export type TurnOutcome = "acted" | "unknown" | "error";
+
+export interface TurnResult {
+  reply: string;
+  outcome: TurnOutcome;
+}
 
 @Injectable()
 export class ConversationService {
@@ -17,7 +24,7 @@ export class ConversationService {
     private readonly sessions: SessionRegistry,
   ) {}
 
-  async handleTurn(sessionId: string, userText: string): Promise<string> {
+  async handleTurn(sessionId: string, userText: string): Promise<TurnResult> {
     const prior = this.inFlight.get(sessionId);
     if (prior) {
       await prior.catch(() => undefined);
@@ -33,22 +40,49 @@ export class ConversationService {
     }
   }
 
-  private async runTurn(sessionId: string, userText: string): Promise<string> {
+  private async runTurn(sessionId: string, userText: string): Promise<TurnResult> {
     await this.sessions.touch(sessionId);
     const graph = this.graphFactory.build();
+    this.logger.info(
+      { sessionId, userText: userText.slice(0, 160), userChars: userText.length },
+      "→ graph.invoke",
+    );
+    const startedAt = Date.now();
     try {
       const result = (await graph.invoke(
         { messages: [new HumanMessage(userText)], sessionId },
-        { configurable: { thread_id: sessionId } },
-      )) as { messages: BaseMessage[] };
+        { configurable: { thread_id: sessionId }, recursionLimit: 8 },
+      )) as { messages: BaseMessage[]; lastAgentResult?: unknown };
       const reply = extractSpokenReply(result.messages);
-      this.logger.info({ sessionId, replyChars: reply.length }, "Turn finished");
-      return reply;
+      const acted = wasActed(result);
+      this.logger.info(
+        { sessionId, replyChars: reply.length, acted, ms: Date.now() - startedAt },
+        "← graph.invoke",
+      );
+      return { reply, outcome: acted ? "acted" : "unknown" };
     } catch (err) {
-      this.logger.error({ err, sessionId }, "Turn threw, returning fallback reply");
-      return FALLBACK_REPLY;
+      this.logger.error(
+        { err, sessionId, ms: Date.now() - startedAt },
+        "Turn threw, returning fallback reply",
+      );
+      return { reply: FALLBACK_REPLY, outcome: "error" };
     }
   }
+}
+
+function wasActed(result: { messages: BaseMessage[]; lastAgentResult?: unknown }): boolean {
+  if (result.lastAgentResult && typeof result.lastAgentResult === "object") {
+    const lar = result.lastAgentResult as { status?: string };
+    if (lar.status === "ok") return true;
+  }
+  // Fallback: any AIMessage with a name (i.e. a domain reply) in the trail.
+  for (const m of result.messages) {
+    const name = (m as { name?: string }).name;
+    if (m instanceof AIMessage && typeof name === "string" && name && name !== "supervisor") {
+      return true;
+    }
+  }
+  return false;
 }
 
 function extractSpokenReply(messages: BaseMessage[]): string {

@@ -9,6 +9,7 @@ enum CueSound: String {
     case ackThinking
     case ackSuccess
     case ackError
+    case ackUnknown
 
     var systemSoundPath: String {
         switch self {
@@ -20,6 +21,7 @@ enum CueSound: String {
         case .ackThinking: return "/System/Library/Sounds/Bottle.aiff"
         case .ackSuccess: return "/System/Library/Sounds/Glass.aiff"
         case .ackError: return "/System/Library/Sounds/Basso.aiff"
+        case .ackUnknown: return "/System/Library/Sounds/Funk.aiff"
         }
     }
 }

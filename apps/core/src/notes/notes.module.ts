@@ -1,12 +1,13 @@
 import { Global, Module, OnModuleInit } from "@nestjs/common";
 import { AgentRegistry } from "../agents/agent-registry.service";
 import { EarModule } from "../ear/ear.module";
+import { EarSessionsModule } from "../ear-sessions/ear-sessions.module";
 import { NotesStorageService } from "./notes-storage.service";
 import { NotesAgentService } from "./notes-agent.service";
 
 @Global()
 @Module({
-  imports: [EarModule],
+  imports: [EarModule, EarSessionsModule],
   providers: [NotesStorageService, NotesAgentService],
   exports: [NotesStorageService, NotesAgentService],
 })

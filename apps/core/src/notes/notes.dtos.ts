@@ -1,4 +1,4 @@
-import { IsString, MinLength } from "class-validator";
+import { IsIn, IsString, MinLength } from "class-validator";
 
 export class SaveShortNoteDto {
   @IsString()
@@ -6,7 +6,7 @@ export class SaveShortNoteDto {
   text!: string;
 }
 
-export class EnableLongNoteModeDto {
+export class BeginDictationDto {
   // Marker DTO. Tools require non-empty schemas; the placeholder keeps the
   // boot smoke happy while expressing "no input expected".
   @IsString()
@@ -14,8 +14,14 @@ export class EnableLongNoteModeDto {
   intent!: string;
 }
 
-export class EndLongNoteModeDto {
+export class FinalizeNoteDto {
   @IsString()
   @MinLength(1)
   cleanText!: string;
+}
+
+export class DiscardNoteDto {
+  @IsString()
+  @IsIn(["user", "noise", "off-topic", "other"])
+  reason!: "user" | "noise" | "off-topic" | "other";
 }

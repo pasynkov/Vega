@@ -64,6 +64,8 @@ export class EnvConfig {
   readonly earWsPort: number = intEnv("EAR_WS_PORT", 7777);
   readonly deepgramLanguage: string = optionalEnv("DEEPGRAM_LANGUAGE", "ru");
   readonly sessionTimeoutMs: number = intEnv("SESSION_TIMEOUT_MS", 30_000);
+  readonly earSessionOwnerCapMs: number = intEnv("EAR_SESSION_OWNER_CAP_MS", 90_000);
+  readonly earSessionPauseMs: number = intEnv("EAR_SESSION_PAUSE_MS", 3_000);
   readonly recordingsDir: string = resolveRecordingsDir();
   readonly vegaDbPath: string = resolveDbPath(this.recordingsDir);
   readonly llmPingOnBoot: boolean = process.env.VEGA_LLM_PING_ON_BOOT === "1";

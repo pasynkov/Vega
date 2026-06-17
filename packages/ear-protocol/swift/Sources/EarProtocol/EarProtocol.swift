@@ -31,6 +31,7 @@ public enum Cue: String, Codable, Sendable {
     case ackThinking = "ack_thinking"
     case ackSuccess = "ack_success"
     case ackError = "ack_error"
+    case ackUnknown = "ack_unknown"
 }
 
 public enum SessionMode: String, Codable, Sendable {

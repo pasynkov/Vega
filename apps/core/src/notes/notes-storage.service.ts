@@ -1,7 +1,12 @@
 import { Injectable } from "@nestjs/common";
 import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { existsSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 
 function resolveNotesDir(): string {
@@ -31,6 +36,8 @@ function timestampFilename(now: Date): string {
 @Injectable()
 export class NotesStorageService {
   private readonly notesDir = resolveNotesDir();
+  private readonly inProgress = new Map<string, string>();
+  private readonly lastAppend = new Map<string, string>();
 
   constructor(@InjectPinoLogger(NotesStorageService.name) private readonly logger: PinoLogger) {}
 
@@ -42,5 +49,62 @@ export class NotesStorageService {
     writeFileSync(path, body, "utf8");
     this.logger.info({ path, bytes: body.length }, "Note saved");
     return { path };
+  }
+
+  appendChunk(sessionId: string, chunk: string, now: Date = new Date()): { path: string } {
+    const trimmed = chunk.trim();
+    if (trimmed.length === 0) {
+      return { path: this.inProgress.get(sessionId) ?? "" };
+    }
+    if (this.lastAppend.get(sessionId) === trimmed) {
+      return { path: this.inProgress.get(sessionId) ?? "" };
+    }
+    let path = this.inProgress.get(sessionId);
+    if (!path) {
+      mkdirSync(this.notesDir, { recursive: true });
+      const filename = timestampFilename(now);
+      path = join(this.notesDir, filename);
+      const header = `_${now.toISOString()}_\n\n`;
+      writeFileSync(path, header, "utf8");
+      this.inProgress.set(sessionId, path);
+      this.logger.info({ path, sessionId }, "Started in-progress note file");
+    }
+    appendFileSync(path, `${trimmed}\n`, "utf8");
+    this.lastAppend.set(sessionId, trimmed);
+    return { path };
+  }
+
+  finalizeInProgress(
+    sessionId: string,
+    cleanText: string,
+    now: Date = new Date(),
+  ): { path: string } {
+    const path = this.inProgress.get(sessionId) ?? join(this.notesDir, timestampFilename(now));
+    mkdirSync(this.notesDir, { recursive: true });
+    const body = `_${now.toISOString()}_\n\n${cleanText.trim()}\n`;
+    writeFileSync(path, body, "utf8");
+    this.inProgress.delete(sessionId);
+    this.lastAppend.delete(sessionId);
+    this.logger.info({ path, sessionId, bytes: body.length }, "In-progress note finalized");
+    return { path };
+  }
+
+  discardInProgress(sessionId: string, reason: string): { path: string | null } {
+    const path = this.inProgress.get(sessionId);
+    if (path && existsSync(path)) {
+      try {
+        rmSync(path);
+        this.logger.info({ path, sessionId, reason }, "In-progress note discarded");
+      } catch (err) {
+        this.logger.warn({ err, path, sessionId }, "Discard failed, leaving file on disk");
+      }
+    }
+    this.inProgress.delete(sessionId);
+    this.lastAppend.delete(sessionId);
+    return { path: path ?? null };
+  }
+
+  hasInProgress(sessionId: string): boolean {
+    return this.inProgress.has(sessionId);
   }
 }

@@ -1,4 +1,4 @@
-import { IsIn, IsOptional, IsString, ValidateIf } from "class-validator";
+import { IsOptional, IsString, ValidateIf } from "class-validator";
 
 export const END_NODE = "__end__";
 
@@ -13,7 +13,6 @@ export class RouteSchema {
 
   @IsOptional()
   @IsString()
-  @ValidateIf((o: RouteSchema) => o.goto === END_NODE)
   speakText?: string;
 }
 
@@ -30,9 +29,7 @@ export function makeRouteValidator(activeDomainNames: string[]) {
       errors.push(`Invalid goto "${String(r.goto)}". Must be one of: ${[...allowed].join(", ")}`);
     }
     if (r.goto === END_NODE) {
-      if (typeof r.speakText !== "string" || r.speakText.trim() === "") {
-        errors.push('When goto is "__end__", speakText must be a non-empty string.');
-      }
+      // speakText optional; TTS is not wired yet.
     } else if (typeof r.goto === "string" && allowed.has(r.goto)) {
       if (typeof r.task !== "string" || r.task.trim() === "") {
         errors.push("When goto is a domain name, task must be a non-empty string.");

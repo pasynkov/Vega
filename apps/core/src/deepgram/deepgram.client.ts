@@ -114,7 +114,8 @@ export class DeepgramClient {
         const confidence = (alt?.confidence as number | undefined) ?? null;
         const isFinal: boolean = !!msg?.is_final;
         if (!text) {
-          this.logger.debug({ isFinal, confidence }, "STT empty Results event (Deepgram processed audio but found no speech)");
+          // Empty Results fire many times per second when the user is silent
+          // or speaking quietly — pure noise in logs.
           return;
         }
         if (isFinal) {
