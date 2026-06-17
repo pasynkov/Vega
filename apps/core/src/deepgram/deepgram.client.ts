@@ -1,13 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
-import { createClient, LiveTranscriptionEvents, type ListenLiveClient } from "@deepgram/sdk";
+import WebSocket from "ws";
 import { EnvConfig } from "../config/env";
-
-function toArrayBuffer(view: Uint8Array): ArrayBuffer {
-  const buf = new ArrayBuffer(view.byteLength);
-  new Uint8Array(buf).set(view);
-  return buf;
-}
 
 export interface DeepgramSessionCallbacks {
   onPartial: (text: string) => void;
@@ -22,10 +16,13 @@ export interface DeepgramSession {
   close(): void;
 }
 
+// Direct WebSocket client to Deepgram's /v1/listen live endpoint. Avoids the
+// SDK churn (the official package changed shape between 3.x and 5.x with no
+// stable migration path), and gives us full visibility into close codes /
+// raw error frames.
+
 @Injectable()
 export class DeepgramClient {
-  private sdk: ReturnType<typeof createClient> | null = null;
-
   constructor(
     @InjectPinoLogger(DeepgramClient.name) private readonly logger: PinoLogger,
     private readonly env: EnvConfig,
@@ -54,111 +51,100 @@ export class DeepgramClient {
     }
   }
 
-  private get client(): ReturnType<typeof createClient> {
-    if (!this.sdk) this.sdk = createClient(this.env.deepgramApiKey);
-    return this.sdk;
-  }
-
   open(callbacks: DeepgramSessionCallbacks, sampleRate: number): DeepgramSession {
-    this.logger.info(
-      {
-        language: this.env.deepgramLanguage,
-        model: "nova-3",
-        encoding: "linear16",
-        sampleRate,
-      },
-      "Opening Deepgram live session",
-    );
-
-    const live = this.client.listen.live({
-      language: this.env.deepgramLanguage,
+    const params = new URLSearchParams({
       model: "nova-3",
+      language: this.env.deepgramLanguage,
       encoding: "linear16",
-      sample_rate: sampleRate,
-      channels: 1,
-      interim_results: true,
-      // Deepgram still emits UtteranceEnd as an informational event,
-      // but the Ear's local SilenceDetector owns the authoritative endpoint
-      // signal — Core does not terminate the session on UtteranceEnd, so
-      // Deepgram's parameter only affects when those info events fire.
-      utterance_end_ms: 10_000,
-      vad_events: true,
-      smart_format: true,
-    }) as ListenLiveClient;
+      sample_rate: String(sampleRate),
+      channels: "1",
+      interim_results: "true",
+      utterance_end_ms: "10000",
+      vad_events: "true",
+      smart_format: "true",
+    });
+    const url = `wss://api.deepgram.com/v1/listen?${params.toString()}`;
+    this.logger.info({ sampleRate, model: "nova-3", language: this.env.deepgramLanguage }, "Opening Deepgram live session");
+
+    const ws = new WebSocket(url, {
+      headers: { Authorization: `Token ${this.env.deepgramApiKey}` },
+    });
 
     let buffered: Uint8Array[] = [];
     let opened = false;
     let bytesSent = 0;
     let framesSent = 0;
     let lastReportAt = Date.now();
+    let closed = false;
+    let keepAlive: NodeJS.Timeout | null = null;
 
-    live.on(LiveTranscriptionEvents.Open, () => {
+    ws.on("open", () => {
       opened = true;
       this.logger.info({ buffered: buffered.length }, "Deepgram live socket open, flushing buffer");
       for (const frame of buffered) {
-        live.send(toArrayBuffer(frame));
+        ws.send(frame);
         bytesSent += frame.byteLength;
         framesSent++;
       }
       buffered = [];
+      keepAlive = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "KeepAlive" }));
+        }
+      }, 5_000);
     });
 
-    live.on(LiveTranscriptionEvents.SpeechStarted, () => {
-      this.logger.info("Deepgram: SpeechStarted");
-    });
-
-    live.on(LiveTranscriptionEvents.Transcript, (data: any) => {
-      const alt = data?.channel?.alternatives?.[0];
-      const text = (alt?.transcript as string | undefined) ?? "";
-      const confidence = (alt?.confidence as number | undefined) ?? null;
-      const isFinal: boolean = !!data?.is_final;
-      if (!text) return;
-      if (isFinal) {
-        this.logger.info(`STT FINAL  | ${text}` + (confidence !== null ? `  (conf=${confidence.toFixed(2)})` : ""));
-        callbacks.onFinal(text, confidence);
+    ws.on("message", (raw, isBinary) => {
+      if (isBinary) return;
+      let msg: any;
+      try {
+        msg = JSON.parse(raw.toString("utf-8"));
+      } catch {
+        this.logger.warn({ raw: raw.toString("utf-8").slice(0, 200) }, "Deepgram non-JSON message");
+        return;
+      }
+      const type = msg?.type ?? "";
+      if (type === "Results" || msg?.channel) {
+        const alt = msg?.channel?.alternatives?.[0];
+        const text = (alt?.transcript as string | undefined) ?? "";
+        const confidence = (alt?.confidence as number | undefined) ?? null;
+        const isFinal: boolean = !!msg?.is_final;
+        if (!text) return;
+        if (isFinal) {
+          this.logger.info(`STT FINAL  | ${text}` + (confidence !== null ? `  (conf=${confidence.toFixed(2)})` : ""));
+          callbacks.onFinal(text, confidence);
+        } else {
+          this.logger.info(`STT partial | ${text}`);
+          callbacks.onPartial(text);
+        }
+      } else if (type === "UtteranceEnd") {
+        this.logger.info({ bytesSent, framesSent }, "Deepgram: UtteranceEnd");
+        callbacks.onUtteranceEnd();
+      } else if (type === "SpeechStarted") {
+        this.logger.info("Deepgram: SpeechStarted");
+      } else if (type === "Metadata") {
+        this.logger.info({ msg }, "Deepgram: Metadata");
+      } else if (type === "Error") {
+        const detail = msg?.description || msg?.message || JSON.stringify(msg).slice(0, 200);
+        this.logger.warn({ msg }, `Deepgram protocol error: ${detail}`);
+        callbacks.onError(detail);
       } else {
-        this.logger.info(`STT partial | ${text}`);
-        callbacks.onPartial(text);
+        this.logger.debug({ msg }, "Deepgram unknown message");
       }
     });
 
-    live.on(LiveTranscriptionEvents.UtteranceEnd, () => {
-      this.logger.info({ bytesSent, framesSent }, "Deepgram: UtteranceEnd");
-      callbacks.onUtteranceEnd();
+    ws.on("error", (err: Error) => {
+      this.logger.warn({ err: { message: err.message, name: err.name } }, `Deepgram WS error: ${err.message}`);
+      callbacks.onError(err.message);
     });
 
-    live.on(LiveTranscriptionEvents.Error, (err: any) => {
-      const inner = err?.error;
-      const detail =
-        err?.message ||
-        inner?.message ||
-        err?.reason ||
-        `${err?.type ?? "Error"} (no message)`;
-      this.logger.warn(
-        {
-          type: err?.type,
-          innerType: inner?.type,
-          innerStack: inner?.stack ? String(inner.stack).split("\n").slice(0, 3).join(" | ") : undefined,
-          hint:
-            inner?.type === "TypeError" && /onSocketClose/.test(String(inner?.stack))
-              ? "Likely Deepgram closed the WS without a body — check DEEPGRAM_API_KEY validity and account credit"
-              : undefined,
-        },
-        `Deepgram error: ${detail}`,
-      );
-      callbacks.onError(detail);
-    });
-
-    live.on(LiveTranscriptionEvents.Close, (event: any) => {
+    ws.on("close", (code: number, reason: Buffer) => {
+      if (closed) return;
+      closed = true;
+      if (keepAlive) clearInterval(keepAlive);
       this.logger.info(
-        {
-          code: event?.code,
-          reason: event?.reason,
-          wasClean: event?.wasClean,
-          bytesSent,
-          framesSent,
-        },
-        "Deepgram live socket closed",
+        { code, reason: reason?.toString("utf-8"), bytesSent, framesSent },
+        `Deepgram live socket closed (code ${code})`,
       );
       callbacks.onClose();
     });
@@ -169,14 +155,19 @@ export class DeepgramClient {
           buffered.push(frame);
           return;
         }
-        live.send(toArrayBuffer(frame));
+        if (ws.readyState !== WebSocket.OPEN) return;
+        ws.send(frame);
         bytesSent += frame.byteLength;
         framesSent++;
         const now = Date.now();
         if (now - lastReportAt >= 2_000) {
           this.logger.info(
-            { framesSent, bytesSent, kBperSec: ((bytesSent / ((now - lastReportAt) / 1000)) / 1024).toFixed(1) },
-            "PCM throughput",
+            {
+              framesSent,
+              bytesSent,
+              kBperSec: ((bytesSent / ((now - lastReportAt) / 1000)) / 1024).toFixed(1),
+            },
+            "PCM throughput to Deepgram",
           );
           lastReportAt = now;
           bytesSent = 0;
@@ -184,8 +175,14 @@ export class DeepgramClient {
         }
       },
       close: () => {
+        if (closed) return;
+        closed = true;
+        if (keepAlive) clearInterval(keepAlive);
         try {
-          live.requestClose();
+          if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+            ws.send(JSON.stringify({ type: "CloseStream" }));
+          }
+          ws.close();
         } catch (err) {
           this.logger.warn({ err }, "Failed to close Deepgram live socket cleanly");
         }
