@@ -27,23 +27,6 @@ async function bootstrap(): Promise<void> {
   );
 
   let shuttingDown = false;
-  const dumpHandles = (label: string) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handles = (process as any)._getActiveHandles?.() ?? [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const requests = (process as any)._getActiveRequests?.() ?? [];
-    const summary = (h: unknown) => {
-      const obj = h as { constructor?: { name?: string } };
-      return obj?.constructor?.name ?? typeof h;
-    };
-    // eslint-disable-next-line no-console
-    console.error(
-      `[Bootstrap] ${label}: handles=${handles.length} requests=${requests.length}\n` +
-        `  handles: ${handles.map(summary).join(", ")}\n` +
-        `  requests: ${requests.map(summary).join(", ")}`,
-    );
-  };
-
   const shutdown = async (signal: string) => {
     if (shuttingDown) {
       logger.warn(`Second ${signal}, force exit`, "Bootstrap");
@@ -51,21 +34,11 @@ async function bootstrap(): Promise<void> {
     }
     shuttingDown = true;
     logger.log(`Shutting down (${signal})…`, "Bootstrap");
-
-    dumpHandles("before app.close()");
-
     try {
       await app.close();
-      logger.log("app.close() resolved", "Bootstrap");
     } catch (err) {
       logger.error(`app.close() threw: ${err}`, "Bootstrap");
     }
-
-    dumpHandles("after app.close()");
-
-    // Give pino a tick to flush, then dump again. If anything is still
-    // pending the dump tells us what it is.
-    setTimeout(() => dumpHandles("after 250 ms grace"), 250).unref();
   };
   process.on("SIGINT", () => void shutdown("SIGINT"));
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
