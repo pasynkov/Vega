@@ -69,6 +69,18 @@ final class AudioEngine {
     func start() throws {
         if isRunning { return }
         NSLog("[VegaEar] AudioEngine.start: preparing…")
+
+        // macOS workaround: AVAudioEngine doesn't actively pull samples from
+        // inputNode unless something downstream is consuming them. Without a
+        // graph connection, installTap is silently never invoked. Route
+        // inputNode → mainMixer at outputVolume 0 so the input AudioUnit is
+        // pulled, the tap fires, and no audio is rendered to speakers.
+        let mixer = engine.mainMixerNode
+        mixer.outputVolume = 0
+        let inputFormat = engine.inputNode.inputFormat(forBus: 0)
+        NSLog("[VegaEar] AudioEngine.start: connect input→mainMixer, mute, format=\(inputFormat)")
+        engine.connect(engine.inputNode, to: mixer, format: inputFormat)
+
         engine.prepare()
         NSLog("[VegaEar] AudioEngine.start: starting engine…")
         do {
