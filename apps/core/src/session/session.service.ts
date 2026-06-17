@@ -14,6 +14,7 @@ import { EarConnection, EarRegistry } from "../ear/ear.registry";
 import { DeepgramClient, DeepgramSession } from "../deepgram/deepgram.client";
 import { EnvConfig } from "../config/env";
 import { RecordingStore, SessionRecord } from "../recording/recording-store";
+import { SilenceDetector } from "./silence-detector";
 
 interface InFlightSession extends SessionRecord {
   shortId: bigint;
@@ -21,6 +22,7 @@ interface InFlightSession extends SessionRecord {
   timeout: NodeJS.Timeout;
   silenceTimer: NodeJS.Timeout | null;
   silenceCapMs: number;
+  vad: SilenceDetector;
   closed: boolean;
 }
 
@@ -62,6 +64,9 @@ export class SessionService {
       timeout: setTimeout(() => this.handleTimeout(message.sessionId), this.env.sessionTimeoutMs),
       silenceTimer: null,
       silenceCapMs: CORE_SILENCE_CAP_MS,
+      vad: new SilenceDetector(undefined, (msg, meta) =>
+        this.logger.info({ sessionId: message.sessionId, ...meta }, msg),
+      ),
       closed: false,
     };
     this.armSilenceTimer(session);
@@ -110,6 +115,11 @@ export class SessionService {
     }
     target.audioBuffers.push(Buffer.from(payload));
     target.deepgram?.send(payload);
+
+    const decision = target.vad.feed(payload);
+    if (decision === "endpoint") {
+      void this.terminate(target, "endpoint", "core:vad");
+    }
   }
 
   async endFromEar(connection: EarConnection, message: EarSessionEndMessage): Promise<void> {
