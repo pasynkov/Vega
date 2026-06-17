@@ -89,17 +89,12 @@ export class DeepgramClient {
       const text = (alt?.transcript as string | undefined) ?? "";
       const confidence = (alt?.confidence as number | undefined) ?? null;
       const isFinal: boolean = !!data?.is_final;
-      const speechFinal: boolean = !!data?.speech_final;
-      this.logger.debug(
-        { text, isFinal, speechFinal, confidence, bytesSentSoFar: bytesSent },
-        "Deepgram transcript event",
-      );
       if (!text) return;
       if (isFinal) {
-        this.logger.info({ text, confidence }, "Deepgram final");
+        this.logger.info(`STT FINAL  | ${text}` + (confidence !== null ? `  (conf=${confidence.toFixed(2)})` : ""));
         callbacks.onFinal(text, confidence);
       } else {
-        this.logger.info({ text }, "Deepgram partial");
+        this.logger.info(`STT partial | ${text}`);
         callbacks.onPartial(text);
       }
     });

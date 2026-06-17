@@ -19,8 +19,12 @@ interface InFlightSession extends SessionRecord {
   shortId: bigint;
   deepgram: DeepgramSession | null;
   timeout: NodeJS.Timeout;
+  silenceTimer: NodeJS.Timeout | null;
+  silenceCapMs: number;
   closed: boolean;
 }
+
+const CORE_SILENCE_CAP_MS = 5_000;
 
 @Injectable()
 export class SessionService {
@@ -56,8 +60,11 @@ export class SessionService {
       shortId,
       deepgram: null,
       timeout: setTimeout(() => this.handleTimeout(message.sessionId), this.env.sessionTimeoutMs),
+      silenceTimer: null,
+      silenceCapMs: CORE_SILENCE_CAP_MS,
       closed: false,
     };
+    this.armSilenceTimer(session);
 
     const deepgram = this.deepgram.open(
       {
@@ -123,6 +130,7 @@ export class SessionService {
   private onPartial(session: InFlightSession, text: string): void {
     if (session.closed) return;
     session.partials.push(text);
+    this.armSilenceTimer(session);
     const msg: PartialTranscriptMessage = {
       type: "partial_transcript",
       sessionId: session.sessionId,
@@ -136,6 +144,23 @@ export class SessionService {
     if (session.closed) return;
     session.finals.push(text);
     if (confidence !== null) session.transcriptConfidence = confidence;
+    this.armSilenceTimer(session);
+  }
+
+  // Backend silence cap: if Deepgram has not produced any non-empty transcript
+  // for `silenceCapMs`, Core considers the utterance finished and terminates
+  // the session with reason=endpoint. This both stops the recording and tells
+  // the Ear (via play_cue endpoint + session_end) to play Pop and idle.
+  private armSilenceTimer(session: InFlightSession): void {
+    if (session.silenceTimer) clearTimeout(session.silenceTimer);
+    session.silenceTimer = setTimeout(() => {
+      if (session.closed) return;
+      this.logger.info(
+        { sessionId: session.sessionId, capMs: session.silenceCapMs },
+        "Core silence cap reached, ending session",
+      );
+      void this.terminate(session, "endpoint");
+    }, session.silenceCapMs);
   }
 
   private onUtteranceEnd(session: InFlightSession): void {
@@ -166,6 +191,10 @@ export class SessionService {
     if (session.closed) return;
     session.closed = true;
     clearTimeout(session.timeout);
+    if (session.silenceTimer) {
+      clearTimeout(session.silenceTimer);
+      session.silenceTimer = null;
+    }
     this.logger.info(
       {
         sessionId: session.sessionId,

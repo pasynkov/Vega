@@ -7,7 +7,7 @@ enum CueSound: String {
 
     var systemSoundPath: String {
         switch self {
-        case .wake: return "/System/Library/Sounds/Glass.aiff"
+        case .wake: return "/System/Library/Sounds/Bottle.aiff"
         case .endpoint: return "/System/Library/Sounds/Pop.aiff"
         case .error: return "/System/Library/Sounds/Basso.aiff"
         }
