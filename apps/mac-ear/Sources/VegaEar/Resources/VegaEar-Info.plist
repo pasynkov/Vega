@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>dev.pasynkov.vega.ear</string>
+  <key>CFBundleName</key>
+  <string>Vega Ear</string>
+  <key>CFBundleDisplayName</key>
+  <string>Vega Ear</string>
+  <key>CFBundleShortVersionString</key>
+  <string>0.1.0</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>LSUIElement</key>
+  <true/>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Vega listens for the wake word "Vega" and records the task you dictate. Микрофон используется только для распознавания ключевого слова «Vega» и записи задачи, которую вы диктуете.</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.utilities</string>
+</dict>
+</plist>

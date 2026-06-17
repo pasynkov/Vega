@@ -1,0 +1,219 @@
+import AVFoundation
+import Foundation
+import EarProtocol
+
+final class SessionCoordinator {
+    private let deviceId: String
+    private let wake: WakeWordDetector
+    private let audio: AudioEngine
+    private let encoder: AudioFrameProducer
+    private let socket: EarSocket
+    private let cues: CuePlayer
+    private let status: StatusItemController
+    private let safetyCapMs: Int = 30_000
+
+    private let serial = DispatchQueue(label: "vega.ear.coordinator")
+    private var activeSessionId: String?
+    private var safetyTimer: DispatchSourceTimer?
+    private var paused = false
+
+    init(
+        deviceId: String,
+        wake: WakeWordDetector,
+        audio: AudioEngine,
+        encoder: AudioFrameProducer,
+        socket: EarSocket,
+        cues: CuePlayer,
+        statusController: StatusItemController
+    ) {
+        self.deviceId = deviceId
+        self.wake = wake
+        self.audio = audio
+        self.encoder = encoder
+        self.socket = socket
+        self.cues = cues
+        self.status = statusController
+    }
+
+    func start() throws {
+        wake.onDetect = { [weak self] score in self?.handleWake(score: score) }
+        socket.onMessage = { [weak self] msg in self?.handleCoreMessage(msg) }
+        socket.onStatusChange = { [weak self] connected in
+            self?.status.setState(connected ? .idle : .error("Core unreachable"))
+        }
+
+        audio.addSink { [weak self] pcm in
+            guard let self else { return }
+            self.serial.async {
+                if !self.paused {
+                    let downsampled = Self.downsample48kTo16k(pcm)
+                    self.wake.feed(downsampled)
+                }
+                if self.activeSessionId != nil {
+                    self.streamAudio(pcm)
+                }
+            }
+        }
+
+        try audio.start()
+        try wake.start()
+        socket.connect()
+        status.setState(.idle)
+    }
+
+    func shutdown() {
+        serial.sync {
+            if let sid = activeSessionId {
+                socket.sendJSON(EarSessionEndMessage(sessionId: sid, reason: .user))
+            }
+            activeSessionId = nil
+            safetyTimer?.cancel()
+            safetyTimer = nil
+        }
+        wake.stop()
+        audio.stop()
+        socket.disconnect()
+    }
+
+    func setPaused(_ paused: Bool) {
+        serial.async {
+            self.paused = paused
+            if paused, let sid = self.activeSessionId {
+                self.socket.sendJSON(EarSessionEndMessage(sessionId: sid, reason: .user))
+                self.activeSessionId = nil
+                self.safetyTimer?.cancel()
+                self.safetyTimer = nil
+            }
+        }
+    }
+
+    // Public hook so a debug UI (menu-bar "Trigger test wake") or a future
+    // remote trigger can start a session without going through Porcupine.
+    func simulateWake() {
+        handleWake(score: 1.0)
+    }
+
+    private func handleWake(score: Float) {
+        serial.async {
+            guard !self.paused else { return }
+            guard self.activeSessionId == nil else { return }
+
+            let sessionId = UUID().uuidString.lowercased()
+            self.activeSessionId = sessionId
+            self.cues.play(.wake)
+            self.status.setState(.listening)
+
+            let wakeMsg = WakeDetectedMessage(
+                deviceId: self.deviceId,
+                score: Double(score),
+                timestamp: ISO8601DateFormatter().string(from: Date())
+            )
+            self.socket.sendJSON(wakeMsg)
+
+            let startMsg = SessionStartMessage(
+                deviceId: self.deviceId,
+                sessionId: sessionId,
+                userId: nil,
+                sampleRate: 48_000,
+                codec: .linear16
+            )
+            self.socket.sendJSON(startMsg)
+
+            for buffered in self.audio.drainPreRoll() {
+                self.streamAudio(buffered)
+            }
+
+            self.armSafetyTimer(for: sessionId)
+            self.status.setState(.streaming)
+        }
+    }
+
+    private func streamAudio(_ pcm: Data) {
+        guard let sid = activeSessionId else { return }
+        do {
+            for frame in try encoder.encode(pcm) {
+                socket.sendAudio(sessionId: sid, opusFrame: frame)
+            }
+        } catch {
+            NSLog("[VegaEar] encoder error: \(error)")
+        }
+    }
+
+    private func armSafetyTimer(for sessionId: String) {
+        safetyTimer?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: serial)
+        timer.schedule(deadline: .now() + .milliseconds(safetyCapMs))
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            guard self.activeSessionId == sessionId else { return }
+            self.socket.sendJSON(EarSessionEndMessage(sessionId: sessionId, reason: .timeout))
+            self.cues.play(.endpoint)
+            self.activeSessionId = nil
+            self.status.setState(.idle)
+        }
+        timer.resume()
+        safetyTimer = timer
+    }
+
+    private func handleCoreMessage(_ message: CoreToEarMessage) {
+        switch message {
+        case .ack:
+            break
+        case .wakeAck(let m):
+            if m.action == .yield {
+                serial.async {
+                    if let sid = self.activeSessionId {
+                        self.socket.sendJSON(EarSessionEndMessage(sessionId: sid, reason: .user))
+                        self.activeSessionId = nil
+                        self.safetyTimer?.cancel()
+                        self.status.setState(.idle)
+                    }
+                }
+            }
+        case .partialTranscript:
+            break
+        case .finalTranscript:
+            break
+        case .playCue(let m):
+            switch m.cue {
+            case .wake: cues.play(.wake)
+            case .endpoint: cues.play(.endpoint)
+            case .error: cues.play(.error)
+            }
+        case .sessionEnd(let m):
+            serial.async {
+                guard self.activeSessionId == m.sessionId else { return }
+                self.activeSessionId = nil
+                self.safetyTimer?.cancel()
+                self.safetyTimer = nil
+                switch m.reason {
+                case .endpoint:
+                    self.status.setState(.idle)
+                case .timeout:
+                    self.cues.play(.endpoint)
+                    self.status.setState(.idle)
+                case .sttError, .user:
+                    self.cues.play(.error)
+                    self.status.setState(.error(m.detail ?? "Session ended: \(m.reason.rawValue)"))
+                }
+            }
+        }
+    }
+
+    // Naive 3:1 decimation 48 kHz -> 16 kHz for Porcupine. Picks every third
+    // int16 sample; good enough for keyword spotting at low CPU cost. A future
+    // change can swap in a proper low-pass filter if false-positive rate rises.
+    private static func downsample48kTo16k(_ pcm: Data) -> Data {
+        let count = pcm.count / MemoryLayout<Int16>.size
+        var samples = [Int16](repeating: 0, count: count)
+        _ = samples.withUnsafeMutableBytes { pcm.copyBytes(to: $0) }
+        var out: [Int16] = []
+        out.reserveCapacity(count / 3 + 1)
+        var i = 0
+        while i < samples.count {
+            out.append(samples[i])
+            i += 3
+        }
+        return out.withUnsafeBufferPointer { Data(buffer: $0) }
+    }
+}
