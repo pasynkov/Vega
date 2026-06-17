@@ -91,12 +91,14 @@ final class StatusItemController: NSObject {
     }
 
     func setMicSnapshot(devices: [MicDevice], selectedUID: String?) {
+        NSLog("[VegaEar] StatusItem.setMicSnapshot: count=\(devices.count) selectedUID=\(selectedUID ?? "nil")")
         micDevices = devices
         micSelectedUID = selectedUID
         rebuildMicSubmenu()
     }
 
     private func rebuildMicSubmenu() {
+        NSLog("[VegaEar] StatusItem.rebuildMicSubmenu: micSelectedUID=\(micSelectedUID ?? "nil")")
         micSubmenu.removeAllItems()
 
         let systemItem = NSMenuItem(title: "System default", action: #selector(micItemClicked(_:)), keyEquivalent: "")
@@ -150,6 +152,7 @@ final class StatusItemController: NSObject {
 extension StatusItemController: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         guard menu === micSubmenu else { return }
+        NSLog("[VegaEar] StatusItem.menuNeedsUpdate fired for micSubmenu, selectedUID=\(micSelectedUID ?? "nil")")
         rebuildMicSubmenu()
     }
 }

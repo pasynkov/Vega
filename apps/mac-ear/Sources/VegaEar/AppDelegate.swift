@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Foundation
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -14,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         secrets = SecretStore()
         preferences = Preferences()
         statusController = StatusItemController()
+        checkMicrophonePermission()
         statusController.onPauseToggle = { [weak self] paused in
             self?.coordinator.setPaused(paused)
         }
@@ -80,16 +82,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyMicSelection(uid: String?) {
-        guard let audio else { return }
+        NSLog("[VegaEar] AppDelegate.applyMicSelection(uid=\(uid ?? "nil"))")
+        guard let audio else {
+            NSLog("[VegaEar] applyMicSelection: audio is nil, bailing")
+            return
+        }
         do {
             let device = uid.flatMap { MicDeviceCatalog.find(uid: $0) }
             try audio.selectDevice(device)
             preferences.setMicUID(uid)
-            NSLog("[VegaEar] mic selected: uid=\(uid ?? "system default")")
+            NSLog("[VegaEar] preferences.micUID after set = \(preferences.micUID ?? "nil")")
             refreshMicMenu()
         } catch {
             NSLog("[VegaEar] Failed to apply mic selection: \(error)")
             statusController.setState(.error("Mic selection failed: \(error.localizedDescription)"))
+        }
+    }
+
+    private func checkMicrophonePermission() {
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+        switch status {
+        case .authorized:
+            NSLog("[VegaEar] mic permission: authorized")
+        case .notDetermined:
+            NSLog("[VegaEar] mic permission: not determined — requesting…")
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                NSLog("[VegaEar] mic permission requestAccess result: granted=\(granted)")
+                if !granted {
+                    DispatchQueue.main.async {
+                        self.statusController.setState(.error("Microphone access denied. Grant in System Settings → Privacy & Security → Microphone."))
+                    }
+                }
+            }
+        case .denied:
+            NSLog("[VegaEar] mic permission: DENIED — open System Settings → Privacy & Security → Microphone")
+            statusController.setState(.error("Microphone access denied. Grant in System Settings → Privacy & Security → Microphone."))
+        case .restricted:
+            NSLog("[VegaEar] mic permission: restricted by parental controls / MDM")
+            statusController.setState(.error("Microphone access restricted by system policy."))
+        @unknown default:
+            NSLog("[VegaEar] mic permission: unknown status \(status.rawValue)")
         }
     }
 

@@ -11,7 +11,7 @@ final class SilenceDetector {
         var sampleRate: Double = 48_000
         var speechRmsThreshold: Double = 600         // ~ -35 dBFS
         var silenceRmsThreshold: Double = 350        // ~ -39 dBFS
-        var endSilenceMs: Int = 1_200
+        var endSilenceMs: Int = 3_000
         var minPreSpeechMs: Int = 300
         var graceMs: Int = 500
     }
