@@ -54,9 +54,10 @@ export class DeepgramClient {
       sample_rate: sampleRate,
       channels: 1,
       interim_results: true,
-      // Match the Ear's local VAD endSilenceMs (3 s) so Deepgram doesn't
-      // cut a session mid-phrase on a normal pause between words. The Ear
-      // still owns the authoritative endpoint via its silence detector.
+      // Deepgram still emits UtteranceEnd as an informational event,
+      // but the Ear's local SilenceDetector owns the authoritative endpoint
+      // signal — Core does not terminate the session on UtteranceEnd, so
+      // Deepgram's parameter only affects when those info events fire.
       utterance_end_ms: 3_000,
       vad_events: true,
       smart_format: true,

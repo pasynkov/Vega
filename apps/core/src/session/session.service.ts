@@ -140,7 +140,10 @@ export class SessionService {
 
   private onUtteranceEnd(session: InFlightSession): void {
     if (session.closed) return;
-    void this.terminate(session, "endpoint");
+    // Informational only: Deepgram thinks the utterance ended, but the Ear's
+    // local VAD is the authoritative endpoint signal so the user can pace
+    // dictation with pauses. We just record the event.
+    this.logger.info({ sessionId: session.sessionId }, "Deepgram suggested utterance end, ignoring (Ear owns endpoint)");
   }
 
   private onSttError(session: InFlightSession, detail: string): void {
