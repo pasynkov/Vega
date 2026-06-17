@@ -29,7 +29,30 @@ export class DeepgramClient {
   constructor(
     @InjectPinoLogger(DeepgramClient.name) private readonly logger: PinoLogger,
     private readonly env: EnvConfig,
-  ) {}
+  ) {
+    void this.verifyAuth();
+  }
+
+  private async verifyAuth(): Promise<void> {
+    try {
+      const res = await fetch("https://api.deepgram.com/v1/projects", {
+        headers: { Authorization: `Token ${this.env.deepgramApiKey}` },
+      });
+      if (res.ok) {
+        const json: any = await res.json();
+        const count = Array.isArray(json?.projects) ? json.projects.length : 0;
+        this.logger.info({ projects: count }, "Deepgram API key OK");
+      } else {
+        const body = await res.text();
+        this.logger.error(
+          { status: res.status, body: body.slice(0, 200) },
+          "Deepgram API key check FAILED — live sessions will close immediately",
+        );
+      }
+    } catch (err) {
+      this.logger.warn({ err }, "Could not reach Deepgram for key check (network?)");
+    }
+  }
 
   private get client(): ReturnType<typeof createClient> {
     if (!this.sdk) this.sdk = createClient(this.env.deepgramApiKey);
