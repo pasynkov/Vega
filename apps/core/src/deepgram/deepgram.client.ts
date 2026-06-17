@@ -58,7 +58,7 @@ export class DeepgramClient {
       // but the Ear's local SilenceDetector owns the authoritative endpoint
       // signal — Core does not terminate the session on UtteranceEnd, so
       // Deepgram's parameter only affects when those info events fire.
-      utterance_end_ms: 3_000,
+      utterance_end_ms: 10_000,
       vad_events: true,
       smart_format: true,
     }) as ListenLiveClient;

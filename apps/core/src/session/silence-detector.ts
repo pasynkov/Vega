@@ -15,7 +15,7 @@ export interface SilenceDetectorOptions {
 }
 
 export const DEFAULT_SILENCE_OPTS: SilenceDetectorOptions = {
-  endSilenceMs: 3_000,
+  endSilenceMs: 5_000,
   graceMs: 500,
   calibrationMs: 600,
   speechMargin: 300,
