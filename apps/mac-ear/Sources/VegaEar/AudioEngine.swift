@@ -24,6 +24,9 @@ final class AudioEngine {
     private var converterInputFormat: AVAudioFormat?
     private(set) var isRunning = false
     private(set) var currentDevice: MicDevice?
+    private var tapCallbackCount: Int = 0
+    private var tapBytesProducedSinceReport: Int = 0
+    private var tapReportAt: Date = Date()
 
     init() throws {
         targetFormat = AVAudioFormat(
@@ -103,12 +106,37 @@ final class AudioEngine {
         let input = engine.inputNode
         let inputFormat = input.outputFormat(forBus: 0)
         input.removeTap(onBus: 0)
+        tapCallbackCount = 0
+        tapBytesProducedSinceReport = 0
+        tapReportAt = Date()
         input.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
             guard let self else { return }
-            guard let converted = self.convert(buffer: buffer) else { return }
+            self.tapCallbackCount += 1
+            if self.tapCallbackCount <= 3 {
+                NSLog("[VegaEar] tap callback #\(self.tapCallbackCount): frameLength=\(buffer.frameLength) inputFormat=\(buffer.format)")
+            }
+            guard let converted = self.convert(buffer: buffer) else {
+                if self.tapCallbackCount <= 3 {
+                    NSLog("[VegaEar] tap callback #\(self.tapCallbackCount): convert returned nil")
+                }
+                return
+            }
             let data = Self.dataFromBuffer(converted)
+            if self.tapCallbackCount <= 3 {
+                NSLog("[VegaEar] tap callback #\(self.tapCallbackCount): converted bytes=\(data.count) (targetFormat=\(self.targetFormat))")
+            }
+            self.tapBytesProducedSinceReport += data.count
+            let now = Date()
+            if now.timeIntervalSince(self.tapReportAt) >= 2.0 {
+                NSLog("[VegaEar] tap throughput: \(self.tapBytesProducedSinceReport) bytes / 2s (callbacks=\(self.tapCallbackCount))")
+                self.tapBytesProducedSinceReport = 0
+                self.tapReportAt = now
+            }
             self.queue.async {
                 self.preRoll.push(data)
+                if self.sinks.isEmpty && self.tapCallbackCount <= 3 {
+                    NSLog("[VegaEar] tap callback #\(self.tapCallbackCount): WARNING sinks is empty, data discarded")
+                }
                 for sink in self.sinks {
                     sink(data)
                 }
@@ -120,13 +148,17 @@ final class AudioEngine {
         if converter == nil || converterInputFormat != buffer.format {
             converter = AVAudioConverter(from: buffer.format, to: targetFormat)
             converterInputFormat = buffer.format
+            NSLog("[VegaEar] AVAudioConverter rebuilt: input=\(buffer.format) target=\(targetFormat) ok=\(converter != nil)")
         }
         guard let converter else { return nil }
         let capacity = AVAudioFrameCount(targetFormat.sampleRate * Double(buffer.frameLength) / buffer.format.sampleRate) + 16
-        guard let out = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { return nil }
+        guard let out = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else {
+            NSLog("[VegaEar] convert: failed to allocate output buffer capacity=\(capacity)")
+            return nil
+        }
         var error: NSError?
         var supplied = false
-        converter.convert(to: out, error: &error) { _, status in
+        let status = converter.convert(to: out, error: &error) { _, status in
             if supplied {
                 status.pointee = .endOfStream
                 return nil
@@ -135,7 +167,18 @@ final class AudioEngine {
             status.pointee = .haveData
             return buffer
         }
-        if error != nil { return nil }
+        if let error {
+            NSLog("[VegaEar] convert: AVAudioConverter error: \(error) status=\(status.rawValue)")
+            return nil
+        }
+        if out.frameLength == 0 {
+            // First callback after rebuild often gets a "primed" output of zero
+            // frames; log only the first time to flag if it persists.
+            if tapCallbackCount <= 3 {
+                NSLog("[VegaEar] convert: output frameLength=0 (status=\(status.rawValue))")
+            }
+            return nil
+        }
         return out
     }
 

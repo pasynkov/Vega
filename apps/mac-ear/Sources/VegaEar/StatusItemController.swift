@@ -32,6 +32,7 @@ final class StatusItemController: NSObject {
     var onPauseToggle: ((Bool) -> Void)?
     var onQuit: (() -> Void)?
     var onTestWake: (() -> Void)?
+    var onStopSession: (() -> Void)?
     var onMicSelected: ((String?) -> Void)?  // nil = system default
 
     // Snapshot supplied by AppDelegate; the submenu reads it via the delegate
@@ -47,6 +48,7 @@ final class StatusItemController: NSObject {
     private let micSubmenu: NSMenu
     private var paused = false
     private var currentState: ListeningState = .idle
+    private var sessionActive = false
 
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -87,6 +89,14 @@ final class StatusItemController: NSObject {
             self.currentState = state
             self.stateMenuItem.title = state.menuLabel
             self.applyIcon(for: state)
+        }
+    }
+
+    func setSessionActive(_ active: Bool) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.sessionActive = active
+            self.testWakeMenuItem.title = active ? "Stop listening" : "Trigger test wake"
         }
     }
 
@@ -133,7 +143,11 @@ final class StatusItemController: NSObject {
     }
 
     @objc private func testWakeClicked() {
-        onTestWake?()
+        if sessionActive {
+            onStopSession?()
+        } else {
+            onTestWake?()
+        }
     }
 
     @objc private func micItemClicked(_ sender: NSMenuItem) {

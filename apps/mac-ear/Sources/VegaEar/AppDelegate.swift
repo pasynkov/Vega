@@ -26,6 +26,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusController.onTestWake = { [weak self] in
             self?.coordinator.simulateWake()
         }
+        statusController.onStopSession = { [weak self] in
+            self?.coordinator.stopActiveSession()
+        }
         statusController.onMicSelected = { [weak self] uid in
             self?.applyMicSelection(uid: uid)
         }
@@ -70,6 +73,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 cues: cues,
                 statusController: statusController
             )
+            coordinator.onSessionStateChange = { [weak self] active in
+                self?.statusController.setSessionActive(active)
+            }
             try coordinator.start()
         } catch {
             NSLog("[VegaEar] Fatal during startup: \(error)")

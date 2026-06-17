@@ -20,6 +20,8 @@ final class SessionCoordinator {
     private var rmsLastReportAt = Date()
     private var bytesSentInSession = 0
     private var silenceDetector: SilenceDetector?
+    var onSessionStateChange: ((Bool) -> Void)?
+    private var sinkCallbackCount = 0
 
     init(
         deviceId: String,
@@ -49,6 +51,10 @@ final class SessionCoordinator {
         audio.addSink { [weak self] pcm in
             guard let self else { return }
             self.serial.async {
+                self.sinkCallbackCount += 1
+                if self.sinkCallbackCount <= 3 {
+                    NSLog("[VegaEar] SessionCoordinator sink #\(self.sinkCallbackCount): bytes=\(pcm.count) paused=\(self.paused) activeSession=\(self.activeSessionId ?? "nil")")
+                }
                 if !self.paused {
                     let downsampled = Self.downsample48kTo16k(pcm)
                     self.wake.feed(downsampled)
@@ -94,7 +100,26 @@ final class SessionCoordinator {
     // Public hook so a debug UI (menu-bar "Trigger test wake") or a future
     // remote trigger can start a session without going through Porcupine.
     func simulateWake() {
+        NSLog("[VegaEar] simulateWake called")
         handleWake(score: 1.0)
+    }
+
+    // Manual session terminator for the menu-bar "Stop listening" item.
+    func stopActiveSession() {
+        serial.async {
+            guard let sid = self.activeSessionId else {
+                NSLog("[VegaEar] stopActiveSession called but no active session")
+                return
+            }
+            NSLog("[VegaEar] stopActiveSession: ending session=\(sid) bytesSent=\(self.bytesSentInSession)")
+            self.endSessionLocally(sessionId: sid, reason: .user)
+        }
+    }
+
+    var hasActiveSession: Bool {
+        var result = false
+        serial.sync { result = activeSessionId != nil }
+        return result
     }
 
     private func handleWake(score: Float) {
@@ -134,6 +159,7 @@ final class SessionCoordinator {
 
             self.armSafetyTimer(for: sessionId)
             self.status.setState(.streaming)
+            self.onSessionStateChange?(true)
         }
     }
 
@@ -162,6 +188,7 @@ final class SessionCoordinator {
 
     private func endSessionLocally(sessionId: String, reason: EarEndReason) {
         guard activeSessionId == sessionId else { return }
+        NSLog("[VegaEar] endSessionLocally session=\(sessionId) reason=\(reason.rawValue) bytesSent=\(bytesSentInSession)")
         socket.sendJSON(EarSessionEndMessage(sessionId: sessionId, reason: reason))
         cues.play(.endpoint)
         activeSessionId = nil
@@ -169,6 +196,7 @@ final class SessionCoordinator {
         safetyTimer?.cancel()
         safetyTimer = nil
         status.setState(.idle)
+        onSessionStateChange?(false)
     }
 
     private func accumulateAndMaybeReportRms(pcm: Data) {
@@ -201,10 +229,12 @@ final class SessionCoordinator {
         timer.setEventHandler { [weak self] in
             guard let self else { return }
             guard self.activeSessionId == sessionId else { return }
+            NSLog("[VegaEar] safety timer fired for session=\(sessionId) bytesSent=\(self.bytesSentInSession)")
             self.socket.sendJSON(EarSessionEndMessage(sessionId: sessionId, reason: .timeout))
             self.cues.play(.endpoint)
             self.activeSessionId = nil
             self.status.setState(.idle)
+            self.onSessionStateChange?(false)
         }
         timer.resume()
         safetyTimer = timer
@@ -248,6 +278,7 @@ final class SessionCoordinator {
                     self.cues.play(.error)
                     self.status.setState(.error(m.detail ?? "Session ended: \(m.reason.rawValue)"))
                 }
+                self.onSessionStateChange?(false)
             }
         case .partialTranscript(let m):
             NSLog("[VegaEar] partial: \(m.text)")
