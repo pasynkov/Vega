@@ -7,7 +7,10 @@ import { EnvConfig } from "./config/env";
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));
-  app.enableShutdownHooks();
+  // NOTE: Do NOT call app.enableShutdownHooks() — it installs its own SIGINT
+  // listener that races with the manual handler below and ends up calling
+  // onApplicationShutdown twice. The manual handler calls app.close() which
+  // already fires the lifecycle hooks.
 
   const env = app.get(EnvConfig);
   // The WS gateway binds itself on its own port via the ws library; we keep
@@ -32,15 +35,20 @@ async function bootstrap(): Promise<void> {
     shuttingDown = true;
     logger.log(`Shutting down (${signal})…`, "Bootstrap");
     const watchdog = setTimeout(() => {
-      logger.error("Shutdown watchdog tripped after 5s — forcing exit", "Bootstrap");
+      // eslint-disable-next-line no-console
+      console.error("[Bootstrap] Shutdown watchdog tripped — forcing exit");
       process.exit(1);
-    }, 5_000);
+    }, 2_000);
+    watchdog.unref();
     try {
       await app.close();
     } catch (err) {
       logger.error(`Error during app.close(): ${err}`, "Bootstrap");
     } finally {
       clearTimeout(watchdog);
+      // Pino's pretty-print transport runs in a worker thread that keeps the
+      // event loop alive after app.close(). exit() is the only reliable way
+      // to actually return the shell prompt.
       process.exit(0);
     }
   };
