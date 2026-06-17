@@ -53,18 +53,22 @@ export class DeepgramClient {
 
   open(callbacks: DeepgramSessionCallbacks, sampleRate: number): DeepgramSession {
     const params = new URLSearchParams({
-      model: "nova-3",
+      model: "nova-2-general",
       language: this.env.deepgramLanguage,
       encoding: "linear16",
       sample_rate: String(sampleRate),
       channels: "1",
       interim_results: "true",
-      utterance_end_ms: "10000",
+      // Deepgram caps this parameter at 5000 ms (anything higher → HTTP 400
+      // "Invalid 'utterance_end_ms' value"). It's an informational signal
+      // only in our flow — terminate decisions come from the Ear and from
+      // Core's own VAD / silence cap.
+      utterance_end_ms: "5000",
       vad_events: "true",
       smart_format: "true",
     });
     const url = `wss://api.deepgram.com/v1/listen?${params.toString()}`;
-    this.logger.info({ sampleRate, model: "nova-3", language: this.env.deepgramLanguage }, "Opening Deepgram live session");
+    this.logger.info({ sampleRate, model: "nova-2-general", language: this.env.deepgramLanguage, url }, "Opening Deepgram live session");
 
     const ws = new WebSocket(url, {
       headers: { Authorization: `Token ${this.env.deepgramApiKey}` },
