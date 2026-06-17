@@ -7,6 +7,7 @@ import { EnvConfig } from "./config/env";
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));
+  app.enableShutdownHooks();
 
   const env = app.get(EnvConfig);
   // The WS gateway binds itself on its own port via the ws library; we keep
@@ -22,13 +23,29 @@ async function bootstrap(): Promise<void> {
     "Bootstrap",
   );
 
-  const shutdown = async () => {
-    logger.log("Shutting down…", "Bootstrap");
-    await app.close();
-    process.exit(0);
+  let shuttingDown = false;
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) {
+      logger.warn(`Force exit on second ${signal}`, "Bootstrap");
+      process.exit(1);
+    }
+    shuttingDown = true;
+    logger.log(`Shutting down (${signal})…`, "Bootstrap");
+    const watchdog = setTimeout(() => {
+      logger.error("Shutdown watchdog tripped after 5s — forcing exit", "Bootstrap");
+      process.exit(1);
+    }, 5_000);
+    try {
+      await app.close();
+    } catch (err) {
+      logger.error(`Error during app.close(): ${err}`, "Bootstrap");
+    } finally {
+      clearTimeout(watchdog);
+      process.exit(0);
+    }
   };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
 }
 
 bootstrap().catch((err) => {

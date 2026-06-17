@@ -17,13 +17,17 @@ import { RecordingStore } from "../recording/recording-store";
   ],
 })
 export class EarModule implements OnApplicationBootstrap, OnApplicationShutdown {
-  constructor(private readonly gateway: EarGateway) {}
+  constructor(
+    private readonly gateway: EarGateway,
+    private readonly sessions: SessionService,
+  ) {}
 
   async onApplicationBootstrap(): Promise<void> {
     await this.gateway.start();
   }
 
   async onApplicationShutdown(): Promise<void> {
+    await this.sessions.shutdownAll();
     await this.gateway.stop();
   }
 }

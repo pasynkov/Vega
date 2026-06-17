@@ -137,6 +137,13 @@ export class SessionService {
     }
   }
 
+  async shutdownAll(): Promise<void> {
+    const live = Array.from(this.bySessionId.values()).filter((s) => !s.closed);
+    if (live.length === 0) return;
+    this.logger.info({ count: live.length }, "Terminating all in-flight sessions on shutdown");
+    await Promise.all(live.map((s) => this.terminate(s, "user", "core:shutdown")));
+  }
+
   private onPartial(session: InFlightSession, text: string): void {
     if (session.closed) return;
     session.partials.push(text);

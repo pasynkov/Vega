@@ -46,8 +46,15 @@ export class EarGateway {
   async stop(): Promise<void> {
     const server = this.server;
     if (!server) return;
+    this.logger.info({ clients: server.clients.size }, "Closing EarGateway");
+    // Terminate active client sockets so server.close() doesn't hang waiting
+    // for them to close themselves.
+    for (const client of server.clients) {
+      try { client.terminate(); } catch { /* ignore */ }
+    }
     await new Promise<void>((resolve) => server.close(() => resolve()));
     this.server = undefined;
+    this.logger.info("EarGateway closed");
   }
 
   private onConnection(socket: WebSocket, req: IncomingMessage): void {
