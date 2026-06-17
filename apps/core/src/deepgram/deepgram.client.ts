@@ -37,6 +37,16 @@ export class DeepgramClient {
   }
 
   open(callbacks: DeepgramSessionCallbacks): DeepgramSession {
+    this.logger.info(
+      {
+        language: this.env.deepgramLanguage,
+        model: "nova-2",
+        encoding: "linear16",
+        sample_rate: 48_000,
+      },
+      "Opening Deepgram live session",
+    );
+
     const live = this.client.listen.live({
       language: this.env.deepgramLanguage,
       model: "nova-2",
@@ -51,28 +61,47 @@ export class DeepgramClient {
 
     let buffered: Uint8Array[] = [];
     let opened = false;
+    let bytesSent = 0;
+    let framesSent = 0;
+    let lastReportAt = Date.now();
 
     live.on(LiveTranscriptionEvents.Open, () => {
       opened = true;
+      this.logger.info({ buffered: buffered.length }, "Deepgram live socket open, flushing buffer");
       for (const frame of buffered) {
         live.send(toArrayBuffer(frame));
+        bytesSent += frame.byteLength;
+        framesSent++;
       }
       buffered = [];
+    });
+
+    live.on(LiveTranscriptionEvents.SpeechStarted, () => {
+      this.logger.info("Deepgram: SpeechStarted");
     });
 
     live.on(LiveTranscriptionEvents.Transcript, (data: any) => {
       const alt = data?.channel?.alternatives?.[0];
       const text = (alt?.transcript as string | undefined) ?? "";
       const confidence = (alt?.confidence as number | undefined) ?? null;
+      const isFinal: boolean = !!data?.is_final;
+      const speechFinal: boolean = !!data?.speech_final;
+      this.logger.debug(
+        { text, isFinal, speechFinal, confidence, bytesSentSoFar: bytesSent },
+        "Deepgram transcript event",
+      );
       if (!text) return;
-      if (data?.is_final) {
+      if (isFinal) {
+        this.logger.info({ text, confidence }, "Deepgram final");
         callbacks.onFinal(text, confidence);
       } else {
+        this.logger.info({ text }, "Deepgram partial");
         callbacks.onPartial(text);
       }
     });
 
     live.on(LiveTranscriptionEvents.UtteranceEnd, () => {
+      this.logger.info({ bytesSent, framesSent }, "Deepgram: UtteranceEnd");
       callbacks.onUtteranceEnd();
     });
 
@@ -82,7 +111,8 @@ export class DeepgramClient {
       callbacks.onError(detail);
     });
 
-    live.on(LiveTranscriptionEvents.Close, () => {
+    live.on(LiveTranscriptionEvents.Close, (event: any) => {
+      this.logger.info({ event, bytesSent, framesSent }, "Deepgram live socket closed");
       callbacks.onClose();
     });
 
@@ -90,8 +120,20 @@ export class DeepgramClient {
       send: (frame) => {
         if (!opened) {
           buffered.push(frame);
-        } else {
-          live.send(toArrayBuffer(frame));
+          return;
+        }
+        live.send(toArrayBuffer(frame));
+        bytesSent += frame.byteLength;
+        framesSent++;
+        const now = Date.now();
+        if (now - lastReportAt >= 2_000) {
+          this.logger.info(
+            { framesSent, bytesSent, kBperSec: ((bytesSent / ((now - lastReportAt) / 1000)) / 1024).toFixed(1) },
+            "PCM throughput",
+          );
+          lastReportAt = now;
+          bytesSent = 0;
+          framesSent = 0;
         }
       },
       close: () => {

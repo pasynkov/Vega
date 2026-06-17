@@ -79,6 +79,7 @@ export class SessionService {
         deviceId: session.deviceId,
         sampleRate: message.sampleRate,
         codec: message.codec,
+        timeoutMs: this.env.sessionTimeoutMs,
       },
       "Session started",
     );
@@ -158,6 +159,17 @@ export class SessionService {
     if (session.closed) return;
     session.closed = true;
     clearTimeout(session.timeout);
+    this.logger.info(
+      {
+        sessionId: session.sessionId,
+        reason,
+        detail,
+        audioChunks: session.audioBuffers.length,
+        finals: session.finals.length,
+        partials: session.partials.length,
+      },
+      "Terminating session",
+    );
     session.deepgram?.close();
 
     if (reason === "endpoint") {
