@@ -10,9 +10,16 @@ final class EarSocket {
     private let deviceName: String
     private let session: URLSession
     private var task: URLSessionWebSocketTask?
+
+    // Exponential backoff with jitter. Reset only after the connection is
+    // confirmed by Core's `ack` to the `register` message — otherwise an
+    // immediately-rejected handshake would loop tight at 1 s.
     private var reconnectDelay: TimeInterval = 1
+    private let initialReconnectDelay: TimeInterval = 1
     private let maxReconnectDelay: TimeInterval = 30
     private var stopped = false
+    private var registerAcked = false
+    private var attempt = 0
 
     var onMessage: MessageHandler?
     var onStatusChange: StatusHandler?
@@ -62,13 +69,15 @@ final class EarSocket {
     }
 
     private func openTask() {
+        attempt += 1
+        registerAcked = false
+        NSLog("[VegaEar] WS connect attempt #\(attempt) to \(url)")
+
         let task = session.webSocketTask(with: url)
         self.task = task
         task.resume()
-        reconnectDelay = 1
         onStatusChange?(true)
 
-        // Send register immediately.
         let register = RegisterMessage(
             deviceId: deviceId,
             deviceName: deviceName,
@@ -84,7 +93,7 @@ final class EarSocket {
             guard let self else { return }
             switch result {
             case .failure(let error):
-                NSLog("[VegaEar] WS receive failed: \(error)")
+                NSLog("[VegaEar] WS receive failed: \(error.localizedDescription)")
                 self.onStatusChange?(false)
                 self.scheduleReconnect()
             case .success(let message):
@@ -106,6 +115,14 @@ final class EarSocket {
     private func dispatch(data: Data) {
         do {
             let decoded = try EarProtocol.decodeCoreToEar(data)
+            // Mark connection healthy on the first `ack` to register so the
+            // backoff resets only after Core confirmed the handshake.
+            if case .ack = decoded, !registerAcked {
+                registerAcked = true
+                let attemptCount = attempt
+                reconnectDelay = initialReconnectDelay
+                NSLog("[VegaEar] WS healthy after attempt #\(attemptCount), backoff reset")
+            }
             onMessage?(decoded)
         } catch {
             NSLog("[VegaEar] WS decode error: \(error) — payload=\(String(data: data, encoding: .utf8) ?? "?")")
@@ -114,8 +131,13 @@ final class EarSocket {
 
     private func scheduleReconnect() {
         guard !stopped else { return }
-        let delay = reconnectDelay
-        reconnectDelay = min(maxReconnectDelay, reconnectDelay * 2)
+        // Jitter ±25 % so multiple Ears (or a flapping Core) don't synchronise
+        // their retry storms.
+        let jitter = Double.random(in: 0.75...1.25)
+        let delay = reconnectDelay * jitter
+        let nextDelay = min(maxReconnectDelay, reconnectDelay * 2)
+        NSLog(String(format: "[VegaEar] WS reconnect in %.1fs (next backoff %.1fs)", delay, nextDelay))
+        reconnectDelay = nextDelay
         DispatchQueue.global().asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self, !self.stopped else { return }
             self.openTask()
