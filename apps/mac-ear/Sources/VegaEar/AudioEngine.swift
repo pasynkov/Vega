@@ -1,39 +1,38 @@
+import AudioToolbox
 import AVFoundation
 import CoreAudio
 import Foundation
 
 // Captures PCM from the chosen input device at the device's native sample
-// rate (no resampling on the Ear) and broadcasts the frames to consumers.
-// A 1-second pre-roll ring buffer retains a few seconds of audio so a
-// session can include the moments just before the wake word fired.
+// rate and broadcasts the frames to consumers.
 //
-// AVAudioEngine on macOS requires a downstream consumer to actually pull
-// audio from inputNode, so the engine routes inputNode -> mainMixerNode at
-// outputVolume 0 (mute) — without this the installTap closure is never
-// invoked.
-//
-// AVAudioConverter was previously used to resample to 48 kHz int16 mono,
-// but its block-based API silently truncated each callback's output due to
-// per-call priming, so we now do a trivial manual Float32 -> Int16 cast and
-// expose the actual capture rate via `currentSampleRate`. Consumers (Core,
-// Deepgram, ffmpeg) are told the real rate via the session_start message.
+// Implemented as a raw CoreAudio HAL output AU (kAudioUnitSubType_HALOutput)
+// in input-only mode: input bus enabled, output bus disabled. This avoids
+// the AVAudioEngine pitfall on macOS where the engine builds an internal
+// aggregate device combining input + system output, which forces a BT
+// headset into HFP (mono ~16 kHz) and tanks A2DP music quality whenever
+// the Ear is running. AUHAL with output IO disabled never opens the output
+// device, so the headset stays in A2DP.
 
 final class AudioEngine {
     typealias PCMSink = (Data) -> Void
 
-    private var engine = AVAudioEngine()
+    private var audioUnit: AudioUnit?
+    private var renderListPtr: UnsafeMutablePointer<AudioBufferList>?
+    private var renderDataPtr: UnsafeMutableRawPointer?
+    private var renderDataCapacity: Int = 0
+
     private let queue = DispatchQueue(label: "vega.ear.audio", qos: .userInitiated)
     private var sinks: [PCMSink] = []
-    // Byte-budgeted pre-roll holding ~1 second of audio regardless of rate.
     private var preRollBuffers: [Data] = []
     private var preRollByteCount: Int = 0
     private var preRollMaxBytes: Int = 96_000
     private(set) var isRunning = false
     private(set) var currentDevice: MicDevice?
     private(set) var currentSampleRate: Double = 48_000
-    private var tapCallbackCount: Int = 0
-    private var tapBytesProducedSinceReport: Int = 0
-    private var tapReportAt: Date = Date()
+    private var callbackCount: Int = 0
+    private var bytesSinceReport: Int = 0
+    private var reportAt: Date = Date()
 
     init() throws {}
 
@@ -41,16 +40,7 @@ final class AudioEngine {
         NSLog("[VegaEar] AudioEngine.selectDevice begin: target=\(device?.name ?? "(system default)")")
         let wasRunning = isRunning
         if wasRunning { stop() }
-
-        engine = AVAudioEngine()
-        NSLog("[VegaEar] AudioEngine rebuilt")
-
-        if let device {
-            try Self.setInputDevice(engine.inputNode, deviceId: device.id)
-            NSLog("[VegaEar] setInputDevice ok: id=\(device.id) name=\(device.name)")
-        }
         currentDevice = device
-
         if wasRunning {
             try start()
         } else {
@@ -60,34 +50,176 @@ final class AudioEngine {
 
     func start() throws {
         if isRunning { return }
-        NSLog("[VegaEar] AudioEngine.start: preparing…")
+        NSLog("[VegaEar] AudioEngine.start: preparing AUHAL input-only…")
 
-        let mixer = engine.mainMixerNode
-        mixer.outputVolume = 0
-        let inputFormat = engine.inputNode.inputFormat(forBus: 0)
-        NSLog("[VegaEar] AudioEngine.start: connect input→mainMixer, mute, format=\(inputFormat)")
-        engine.connect(engine.inputNode, to: mixer, format: inputFormat)
-
-        engine.prepare()
-        NSLog("[VegaEar] AudioEngine.start: starting engine…")
-        do {
-            try engine.start()
-        } catch {
-            NSLog("[VegaEar] engine.start() threw: \(error)")
-            throw error
+        var desc = AudioComponentDescription(
+            componentType: kAudioUnitType_Output,
+            componentSubType: kAudioUnitSubType_HALOutput,
+            componentManufacturer: kAudioUnitManufacturer_Apple,
+            componentFlags: 0,
+            componentFlagsMask: 0
+        )
+        guard let comp = AudioComponentFindNext(nil, &desc) else {
+            throw Self.makeError("AudioComponentFindNext returned nil", code: -1)
         }
+        var unitOpt: AudioUnit?
+        var st = AudioComponentInstanceNew(comp, &unitOpt)
+        guard st == noErr, let unit = unitOpt else {
+            throw Self.makeError("AudioComponentInstanceNew", code: st)
+        }
+
+        var enable: UInt32 = 1
+        var disable: UInt32 = 0
+        st = AudioUnitSetProperty(
+            unit, kAudioOutputUnitProperty_EnableIO,
+            kAudioUnitScope_Input, 1,
+            &enable, UInt32(MemoryLayout<UInt32>.size)
+        )
+        guard st == noErr else {
+            AudioComponentInstanceDispose(unit)
+            throw Self.makeError("EnableIO input bus", code: st)
+        }
+        st = AudioUnitSetProperty(
+            unit, kAudioOutputUnitProperty_EnableIO,
+            kAudioUnitScope_Output, 0,
+            &disable, UInt32(MemoryLayout<UInt32>.size)
+        )
+        guard st == noErr else {
+            AudioComponentInstanceDispose(unit)
+            throw Self.makeError("EnableIO output bus", code: st)
+        }
+
+        var deviceId: AudioDeviceID = currentDevice?.id ?? Self.systemDefaultInputDeviceID()
+        guard deviceId != 0 else {
+            AudioComponentInstanceDispose(unit)
+            throw Self.makeError("No input device available", code: -1)
+        }
+        st = AudioUnitSetProperty(
+            unit, kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global, 0,
+            &deviceId, UInt32(MemoryLayout<AudioDeviceID>.size)
+        )
+        guard st == noErr else {
+            AudioComponentInstanceDispose(unit)
+            throw Self.makeError("CurrentDevice", code: st)
+        }
+
+        var hwFormat = AudioStreamBasicDescription()
+        var hwSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        st = AudioUnitGetProperty(
+            unit, kAudioUnitProperty_StreamFormat,
+            kAudioUnitScope_Input, 1,
+            &hwFormat, &hwSize
+        )
+        guard st == noErr else {
+            AudioComponentInstanceDispose(unit)
+            throw Self.makeError("Get hardware format", code: st)
+        }
+        let hwRate = hwFormat.mSampleRate > 0 ? hwFormat.mSampleRate : 48_000
+        let hwChannels = hwFormat.mChannelsPerFrame > 0 ? hwFormat.mChannelsPerFrame : 1
+
+        var clientFormat = AudioStreamBasicDescription(
+            mSampleRate: hwRate,
+            mFormatID: kAudioFormatLinearPCM,
+            mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+            mBytesPerPacket: 4,
+            mFramesPerPacket: 1,
+            mBytesPerFrame: 4,
+            mChannelsPerFrame: 1,
+            mBitsPerChannel: 32,
+            mReserved: 0
+        )
+        st = AudioUnitSetProperty(
+            unit, kAudioUnitProperty_StreamFormat,
+            kAudioUnitScope_Output, 1,
+            &clientFormat, UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        )
+        guard st == noErr else {
+            AudioComponentInstanceDispose(unit)
+            throw Self.makeError("Set client format", code: st)
+        }
+        currentSampleRate = hwRate
+        preRollMaxBytes = Int(hwRate) * MemoryLayout<Int16>.size
+
+        let maxFrames: UInt32 = 4096
+        var maxSlice = maxFrames
+        _ = AudioUnitSetProperty(
+            unit, kAudioUnitProperty_MaximumFramesPerSlice,
+            kAudioUnitScope_Global, 0,
+            &maxSlice, UInt32(MemoryLayout<UInt32>.size)
+        )
+
+        let renderBytes = Int(maxFrames) * Int(clientFormat.mBytesPerFrame)
+        let dataPtr = UnsafeMutableRawPointer.allocate(byteCount: renderBytes, alignment: 16)
+        let listPtr = UnsafeMutablePointer<AudioBufferList>.allocate(capacity: 1)
+        listPtr.pointee = AudioBufferList(
+            mNumberBuffers: 1,
+            mBuffers: AudioBuffer(
+                mNumberChannels: 1,
+                mDataByteSize: UInt32(renderBytes),
+                mData: dataPtr
+            )
+        )
+        renderDataPtr = dataPtr
+        renderDataCapacity = renderBytes
+        renderListPtr = listPtr
+
+        var cb = AURenderCallbackStruct(
+            inputProc: { (inRefCon, ioActionFlags, inTimeStamp, inBusNumber, inNumberFrames, _) -> OSStatus in
+                let me = Unmanaged<AudioEngine>.fromOpaque(inRefCon).takeUnretainedValue()
+                return me.handleInput(
+                    ioActionFlags: ioActionFlags,
+                    timeStamp: inTimeStamp,
+                    bus: inBusNumber,
+                    frames: inNumberFrames
+                )
+            },
+            inputProcRefCon: Unmanaged.passUnretained(self).toOpaque()
+        )
+        st = AudioUnitSetProperty(
+            unit, kAudioOutputUnitProperty_SetInputCallback,
+            kAudioUnitScope_Global, 0,
+            &cb, UInt32(MemoryLayout<AURenderCallbackStruct>.size)
+        )
+        guard st == noErr else {
+            disposeRenderBuffers()
+            AudioComponentInstanceDispose(unit)
+            throw Self.makeError("SetInputCallback", code: st)
+        }
+
+        st = AudioUnitInitialize(unit)
+        guard st == noErr else {
+            disposeRenderBuffers()
+            AudioComponentInstanceDispose(unit)
+            throw Self.makeError("AudioUnitInitialize", code: st)
+        }
+        st = AudioOutputUnitStart(unit)
+        guard st == noErr else {
+            AudioUnitUninitialize(unit)
+            disposeRenderBuffers()
+            AudioComponentInstanceDispose(unit)
+            throw Self.makeError("AudioOutputUnitStart", code: st)
+        }
+
+        audioUnit = unit
         isRunning = true
-        let actualId = Self.readCurrentInputDevice(engine.inputNode)
-        NSLog("[VegaEar] AudioEngine started, requested=\(currentDevice?.name ?? "(system default)") audioUnit.deviceID=\(actualId?.description ?? "?")")
-        installTap()
+        callbackCount = 0
+        bytesSinceReport = 0
+        reportAt = Date()
+        NSLog("[VegaEar] AUHAL started: device=\(deviceId) name=\(currentDevice?.name ?? "(system default)") rate=\(hwRate) hwChannels=\(hwChannels) clientChannels=1")
     }
 
     func stop() {
         if !isRunning { return }
-        engine.stop()
-        engine.inputNode.removeTap(onBus: 0)
+        if let unit = audioUnit {
+            AudioOutputUnitStop(unit)
+            AudioUnitUninitialize(unit)
+            AudioComponentInstanceDispose(unit)
+        }
+        audioUnit = nil
+        disposeRenderBuffers()
         isRunning = false
-        NSLog("[VegaEar] AudioEngine stopped")
+        NSLog("[VegaEar] AUHAL stopped")
     }
 
     func addSink(_ sink: @escaping PCMSink) {
@@ -104,6 +236,55 @@ final class AudioEngine {
         return copy
     }
 
+    private func handleInput(
+        ioActionFlags: UnsafeMutablePointer<AudioUnitRenderActionFlags>,
+        timeStamp: UnsafePointer<AudioTimeStamp>,
+        bus: UInt32,
+        frames: UInt32
+    ) -> OSStatus {
+        guard let unit = audioUnit, let listPtr = renderListPtr else { return noErr }
+        let bytesPerFrame: UInt32 = 4
+        let needed = frames * bytesPerFrame
+        if Int(needed) > renderDataCapacity { return noErr }
+        listPtr.pointee.mBuffers.mDataByteSize = needed
+        let st = AudioUnitRender(unit, ioActionFlags, timeStamp, bus, frames, listPtr)
+        guard st == noErr else { return st }
+        let frameCount = Int(frames)
+        guard let floatPtr = listPtr.pointee.mBuffers.mData?.assumingMemoryBound(to: Float32.self) else {
+            return noErr
+        }
+        var data = Data(count: frameCount * MemoryLayout<Int16>.size)
+        data.withUnsafeMutableBytes { rawDst in
+            guard let dst = rawDst.baseAddress?.assumingMemoryBound(to: Int16.self) else { return }
+            for i in 0..<frameCount {
+                let clipped = max(-1.0, min(1.0, floatPtr[i]))
+                dst[i] = Int16(clipped * 32_767)
+            }
+        }
+        callbackCount += 1
+        if callbackCount <= 3 {
+            NSLog("[VegaEar] AUHAL callback #\(callbackCount): frames=\(frames) outBytes=\(data.count)")
+        }
+        bytesSinceReport += data.count
+        let now = Date()
+        if now.timeIntervalSince(reportAt) >= 2.0 {
+            NSLog("[VegaEar] AUHAL throughput: \(bytesSinceReport) bytes / 2s (callbacks=\(callbackCount))")
+            bytesSinceReport = 0
+            reportAt = now
+        }
+        if data.isEmpty { return noErr }
+        queue.async {
+            self.pushPreRoll(data)
+            if self.sinks.isEmpty && self.callbackCount <= 3 {
+                NSLog("[VegaEar] AUHAL callback #\(self.callbackCount): WARNING sinks is empty, data discarded")
+            }
+            for sink in self.sinks {
+                sink(data)
+            }
+        }
+        return noErr
+    }
+
     private func pushPreRoll(_ data: Data) {
         preRollBuffers.append(data)
         preRollByteCount += data.count
@@ -113,98 +294,34 @@ final class AudioEngine {
         }
     }
 
-    private func installTap() {
-        let input = engine.inputNode
-        let inputFormat = input.outputFormat(forBus: 0)
-        currentSampleRate = inputFormat.sampleRate
-        preRollMaxBytes = Int(currentSampleRate) * MemoryLayout<Int16>.size  // ~1 second
-        NSLog("[VegaEar] tap installing: format=\(inputFormat) sampleRate=\(currentSampleRate) channels=\(inputFormat.channelCount) preRollMaxBytes=\(preRollMaxBytes)")
-        input.removeTap(onBus: 0)
-        tapCallbackCount = 0
-        tapBytesProducedSinceReport = 0
-        tapReportAt = Date()
-        input.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
-            guard let self else { return }
-            self.tapCallbackCount += 1
-            let data = Self.floatBufferToInt16Mono(buffer)
-            if self.tapCallbackCount <= 3 {
-                NSLog("[VegaEar] tap callback #\(self.tapCallbackCount): frameLength=\(buffer.frameLength) inFmt=\(buffer.format) outBytes=\(data.count)")
-            }
-            self.tapBytesProducedSinceReport += data.count
-            let now = Date()
-            if now.timeIntervalSince(self.tapReportAt) >= 2.0 {
-                NSLog("[VegaEar] tap throughput: \(self.tapBytesProducedSinceReport) bytes / 2s (callbacks=\(self.tapCallbackCount))")
-                self.tapBytesProducedSinceReport = 0
-                self.tapReportAt = now
-            }
-            if data.isEmpty { return }
-            self.queue.async {
-                self.pushPreRoll(data)
-                if self.sinks.isEmpty && self.tapCallbackCount <= 3 {
-                    NSLog("[VegaEar] tap callback #\(self.tapCallbackCount): WARNING sinks is empty, data discarded")
-                }
-                for sink in self.sinks {
-                    sink(data)
-                }
-            }
-        }
-        NSLog("[VegaEar] tap installed")
+    private func disposeRenderBuffers() {
+        if let dataPtr = renderDataPtr { dataPtr.deallocate() }
+        renderDataPtr = nil
+        if let listPtr = renderListPtr { listPtr.deallocate() }
+        renderListPtr = nil
+        renderDataCapacity = 0
     }
 
-    // Convert a buffer's first channel of Float32 samples to interleaved Int16.
-    // Falls back to int16ChannelData when the engine already gave us int16.
-    private static func floatBufferToInt16Mono(_ buffer: AVAudioPCMBuffer) -> Data {
-        let frameCount = Int(buffer.frameLength)
-        if frameCount == 0 { return Data() }
-
-        if let int16 = buffer.int16ChannelData?[0] {
-            let byteCount = frameCount * MemoryLayout<Int16>.size
-            return Data(bytes: int16, count: byteCount)
-        }
-        guard let float = buffer.floatChannelData?[0] else { return Data() }
-
-        var out = Data(count: frameCount * MemoryLayout<Int16>.size)
-        out.withUnsafeMutableBytes { rawDst in
-            guard let dst = rawDst.baseAddress?.assumingMemoryBound(to: Int16.self) else { return }
-            for i in 0..<frameCount {
-                let clipped = max(-1.0, min(1.0, float[i]))
-                dst[i] = Int16(clipped * 32_767)
-            }
-        }
-        return out
-    }
-
-    private static func readCurrentInputDevice(_ inputNode: AVAudioInputNode) -> AudioDeviceID? {
-        guard let unit = inputNode.audioUnit else { return nil }
-        var id: AudioDeviceID = 0
+    private static func systemDefaultInputDeviceID() -> AudioDeviceID {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var deviceId: AudioDeviceID = 0
         var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        let status = AudioUnitGetProperty(
-            unit,
-            kAudioOutputUnitProperty_CurrentDevice,
-            kAudioUnitScope_Global,
-            0,
-            &id,
-            &size
+        _ = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceId
         )
-        return status == noErr ? id : nil
+        return deviceId
     }
 
-    private static func setInputDevice(_ inputNode: AVAudioInputNode, deviceId: AudioDeviceID) throws {
-        guard let unit = inputNode.audioUnit else {
-            throw NSError(domain: "VegaEar.AudioEngine", code: 1, userInfo: [NSLocalizedDescriptionKey: "Input node has no AudioUnit"])
-        }
-        var id = deviceId
-        let status = AudioUnitSetProperty(
-            unit,
-            kAudioOutputUnitProperty_CurrentDevice,
-            kAudioUnitScope_Global,
-            0,
-            &id,
-            UInt32(MemoryLayout<AudioDeviceID>.size)
+    private static func makeError(_ message: String, code: OSStatus) -> NSError {
+        NSError(
+            domain: "VegaEar.AudioEngine",
+            code: Int(code),
+            userInfo: [NSLocalizedDescriptionKey: "\(message): \(code)"]
         )
-        if status != noErr {
-            throw NSError(domain: "VegaEar.AudioEngine", code: Int(status), userInfo: [NSLocalizedDescriptionKey: "AudioUnitSetProperty(CurrentDevice) failed: \(status)"])
-        }
     }
 }
 
