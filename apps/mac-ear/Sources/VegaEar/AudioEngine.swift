@@ -53,15 +53,9 @@ final class AudioEngine {
         }
         currentDevice = device
 
-        // Force the input AudioUnit to re-resolve its format under the new
-        // device BEFORE we query inputNode.outputFormat(forBus:) — otherwise
-        // that getter can block / return stale state on macOS.
-        engine.prepare()
-        NSLog("[VegaEar] engine.prepare() returned")
-
-        installTap()
-        NSLog("[VegaEar] tap installed (format=\(engine.inputNode.outputFormat(forBus: 0)))")
-
+        // Defer installTap until engine.start() — querying inputNode.outputFormat
+        // (which installTap requires) can block on macOS while the HAL AudioUnit
+        // is still negotiating the new device's format (esp. AirPods HFP).
         if wasRunning {
             try start()
         } else {
@@ -71,7 +65,9 @@ final class AudioEngine {
 
     func start() throws {
         if isRunning { return }
+        NSLog("[VegaEar] AudioEngine.start: preparing…")
         engine.prepare()
+        NSLog("[VegaEar] AudioEngine.start: starting engine…")
         do {
             try engine.start()
         } catch {
@@ -81,6 +77,8 @@ final class AudioEngine {
         isRunning = true
         let actualId = Self.readCurrentInputDevice(engine.inputNode)
         NSLog("[VegaEar] AudioEngine started, requested=\(currentDevice?.name ?? "(system default)") audioUnit.deviceID=\(actualId?.description ?? "?")")
+        installTap()
+        NSLog("[VegaEar] tap installed (format=\(engine.inputNode.outputFormat(forBus: 0)))")
     }
 
     func stop() {
