@@ -7,15 +7,15 @@ import Foundation
 // pipeline. A 1-second pre-roll ring buffer is retained so a session can
 // include the moments just before the wake word fired.
 //
-// The input device is selected explicitly via `selectDevice(_:)` and
-// underlies AVAudioEngine's input AudioUnit; changing the device requires
-// stopping and restarting the engine.
+// AVAudioEngine on macOS does not reliably re-target the input AudioUnit's
+// HAL device after the engine has started, so each `selectDevice(_:)`
+// call rebuilds a fresh AVAudioEngine and reinstalls the tap.
 
 final class AudioEngine {
     typealias PCMSink = (Data) -> Void
 
     let sampleRate: Double = 48_000
-    private let engine = AVAudioEngine()
+    private var engine = AVAudioEngine()
     private let queue = DispatchQueue(label: "vega.ear.audio", qos: .userInitiated)
     private var sinks: [PCMSink] = []
     private var preRoll = RingBuffer<Data>(capacityHint: 50)
@@ -35,23 +35,43 @@ final class AudioEngine {
     }
 
     func selectDevice(_ device: MicDevice?) throws {
+        NSLog("[VegaEar] AudioEngine.selectDevice begin: target=\(device?.name ?? "(system default)")")
         let wasRunning = isRunning
         if wasRunning { stop() }
+
+        // Rebuild the engine. AVAudioEngine caches a HAL AudioUnit on the
+        // input node that survives stop()/start() but doesn't reliably
+        // honour kAudioOutputUnitProperty_CurrentDevice after first use.
+        engine = AVAudioEngine()
+        converter = nil
+        converterInputFormat = nil
+        NSLog("[VegaEar] AudioEngine rebuilt")
+
         if let device {
             try Self.setInputDevice(engine.inputNode, deviceId: device.id)
+            NSLog("[VegaEar] setInputDevice ok: id=\(device.id) name=\(device.name)")
         }
         currentDevice = device
+
         installTap()
-        if wasRunning { try start() }
+        NSLog("[VegaEar] tap installed (format=\(engine.inputNode.outputFormat(forBus: 0)))")
+
+        if wasRunning {
+            try start()
+        } else {
+            NSLog("[VegaEar] selectDevice complete (engine was idle, not auto-starting)")
+        }
     }
 
     func start() throws {
         if isRunning { return }
-        if engine.inputNode.numberOfInputs == 0 {
-            installTap()
-        }
         engine.prepare()
-        try engine.start()
+        do {
+            try engine.start()
+        } catch {
+            NSLog("[VegaEar] engine.start() threw: \(error)")
+            throw error
+        }
         isRunning = true
         NSLog("[VegaEar] AudioEngine started, mic=\(currentDevice?.name ?? "(system default)")")
     }
