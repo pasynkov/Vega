@@ -54,7 +54,10 @@ export class DeepgramClient {
       sample_rate: sampleRate,
       channels: 1,
       interim_results: true,
-      utterance_end_ms: 1_000,
+      // Match the Ear's local VAD endSilenceMs (3 s) so Deepgram doesn't
+      // cut a session mid-phrase on a normal pause between words. The Ear
+      // still owns the authoritative endpoint via its silence detector.
+      utterance_end_ms: 3_000,
       vad_events: true,
       smart_format: true,
     }) as ListenLiveClient;

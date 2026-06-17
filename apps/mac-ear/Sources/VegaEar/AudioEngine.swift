@@ -24,7 +24,10 @@ final class AudioEngine {
     private var engine = AVAudioEngine()
     private let queue = DispatchQueue(label: "vega.ear.audio", qos: .userInitiated)
     private var sinks: [PCMSink] = []
-    private var preRoll = RingBuffer<Data>(capacityHint: 100)
+    // Pre-roll keeps about half a second of audio so a session can capture
+    // the syllable just before the wake-word click/detection. Larger windows
+    // dump multi-second snippets of unrelated ambient audio into the session.
+    private var preRoll = RingBuffer<Data>(capacityHint: 5)
     private(set) var isRunning = false
     private(set) var currentDevice: MicDevice?
     private(set) var currentSampleRate: Double = 48_000
