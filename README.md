@@ -78,6 +78,10 @@ curl -F voice=@recordings/<ts>/audio.ogg \
      "https://api.telegram.org/bot<TOKEN>/sendVoice?chat_id=<YOUR_CHAT_ID>"
 ```
 
+## LLM orchestration (work in progress)
+
+The LLM layer (supervisor + sub-agents + memory) is wired into Core but not yet routed from the Ear's transcript stream. Architecture, contracts, and the `memory` domain spike live in `openspec/changes/llm-orchestration-mvp/`. Drive it interactively via `npm --workspace @vega/core run dev:llm-harness`. The next change will bridge `EarGateway.final_transcript` events to `ConversationService.handleTurn`.
+
 ## OpenSpec workflow
 
 Changes are tracked under `openspec/changes/`. See `openspec/changes/mac-listener-mvp/` for the proposal, design, specs, and task breakdown for this slice.

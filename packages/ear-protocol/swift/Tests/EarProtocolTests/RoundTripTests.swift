@@ -53,7 +53,13 @@ final class RoundTripTests: XCTestCase {
         case .partialTranscript(let m): reencoded = try encoder.encode(m)
         case .finalTranscript(let m): reencoded = try encoder.encode(m)
         case .playCue(let m): reencoded = try encoder.encode(m)
+        case .sessionMode(let m): reencoded = try encoder.encode(m)
         case .sessionEnd(let m): reencoded = try encoder.encode(m)
+        case .unknownCue, .unknownSessionMode:
+            // Tolerance branches — the underlying fixture should never trip these
+            // because every fixture-listed value is known to the binary.
+            XCTFail("Round-trip fixture decoded as unknown tolerance branch for \(key)")
+            return
         }
         let original = try JSONSerialization.jsonObject(with: data)
         let after = try JSONSerialization.jsonObject(with: reencoded)

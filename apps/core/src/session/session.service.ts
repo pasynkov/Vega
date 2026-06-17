@@ -3,10 +3,13 @@ import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
 import {
   CoreEndReason,
   CoreSessionEndMessage,
+  Cue,
   EarSessionEndMessage,
   FinalTranscriptMessage,
   PartialTranscriptMessage,
   PlayCueMessage,
+  SessionMode,
+  SessionModeChangeMessage,
   SessionStartMessage,
   sessionShortIdFromUuid,
 } from "@vega/ear-protocol";
@@ -16,6 +19,8 @@ import { EnvConfig } from "../config/env";
 import { RecordingStore, SessionRecord } from "../recording/recording-store";
 import { SilenceDetector } from "./silence-detector";
 
+type TranscriptListener = (sessionId: string, kind: "partial" | "final", text: string) => void;
+
 interface InFlightSession extends SessionRecord {
   shortId: bigint;
   deepgram: DeepgramSession | null;
@@ -23,14 +28,18 @@ interface InFlightSession extends SessionRecord {
   silenceTimer: NodeJS.Timeout | null;
   silenceCapMs: number;
   vad: SilenceDetector;
+  vadEndpointSuppressed: boolean;
+  mode: SessionMode;
   closed: boolean;
 }
 
 const CORE_SILENCE_CAP_MS = 5_000;
+export const LONG_NOTE_SILENCE_CAP_MS = 60_000;
 
 @Injectable()
 export class SessionService {
   private readonly bySessionId = new Map<string, InFlightSession>();
+  private readonly transcriptListeners = new Set<TranscriptListener>();
 
   constructor(
     @InjectPinoLogger(SessionService.name) private readonly logger: PinoLogger,
@@ -40,9 +49,108 @@ export class SessionService {
     private readonly store: RecordingStore,
   ) {}
 
+  // Subscribe to transcript events on every active session. Used by
+  // SessionWatcher to drive in-session LLM checks.
+  addTranscriptListener(listener: TranscriptListener): () => void {
+    this.transcriptListeners.add(listener);
+    return () => this.transcriptListeners.delete(listener);
+  }
+
+  // Surfacing API for tools that need to mutate session state from inside
+  // the orchestration graph.
+  setSilenceCap(sessionId: string, ms: number): boolean {
+    const session = this.bySessionId.get(sessionId);
+    if (!session || session.closed) return false;
+    session.silenceCapMs = ms;
+    this.armSilenceTimer(session);
+    this.logger.info({ sessionId, capMs: ms }, "Silence cap mutated");
+    return true;
+  }
+
+  setMode(sessionId: string, mode: SessionMode): boolean {
+    const session = this.bySessionId.get(sessionId);
+    if (!session || session.closed) return false;
+    if (session.mode === mode) return true;
+    session.mode = mode;
+    if (mode === "long_note") {
+      session.vadEndpointSuppressed = true;
+      session.silenceCapMs = LONG_NOTE_SILENCE_CAP_MS;
+      this.armSilenceTimer(session);
+    } else {
+      session.vadEndpointSuppressed = false;
+      session.silenceCapMs = CORE_SILENCE_CAP_MS;
+      this.armSilenceTimer(session);
+    }
+    const msg: SessionModeChangeMessage = {
+      type: "session_mode",
+      sessionId,
+      mode,
+    };
+    this.sendToEar(session, msg);
+    this.logger.info({ sessionId, mode }, "Session mode changed");
+    return true;
+  }
+
+  emitCue(sessionId: string, cue: Cue): boolean {
+    const session = this.bySessionId.get(sessionId);
+    if (!session || session.closed) return false;
+    const msg: PlayCueMessage = { type: "play_cue", cue };
+    this.sendToEar(session, msg);
+    this.logger.debug({ sessionId, cue }, "Cue emitted");
+    return true;
+  }
+
+  // Tells the connected Ear to open a fresh capture session under the given
+  // mode without requiring a wake-word. Used by the notes domain's
+  // enable_long_note_mode tool to arm the long-note session after the
+  // original short utterance closed.
+  armEarCapture(mode: SessionMode): boolean {
+    const conn = this.registry.list()[0];
+    if (!conn) {
+      this.logger.warn({ mode }, "armEarCapture: no Ear connected");
+      return false;
+    }
+    const msg = { type: "arm_capture" as const, mode };
+    try {
+      conn.socket.send(JSON.stringify(msg));
+      this.logger.info({ mode, deviceId: conn.deviceId }, "arm_capture sent to Ear");
+      return true;
+    } catch (err) {
+      this.logger.warn({ err, mode }, "armEarCapture: send failed");
+      return false;
+    }
+  }
+
+  async terminateExternal(
+    sessionId: string,
+    reason: CoreEndReason,
+    initiator: string,
+    detail?: string,
+  ): Promise<boolean> {
+    const session = this.bySessionId.get(sessionId);
+    if (!session || session.closed) return false;
+    await this.terminate(session, reason, initiator, detail);
+    return true;
+  }
+
+  hasActiveSession(sessionId: string): boolean {
+    const s = this.bySessionId.get(sessionId);
+    return !!s && !s.closed;
+  }
+
+  getSessionMode(sessionId: string): SessionMode | undefined {
+    return this.bySessionId.get(sessionId)?.mode;
+  }
+
+  getAccumulatedFinals(sessionId: string): string[] {
+    return this.bySessionId.get(sessionId)?.finals.slice() ?? [];
+  }
+
   start(connection: EarConnection, message: SessionStartMessage): void {
     const shortId = sessionShortIdFromUuid(message.sessionId);
     const startedAt = new Date().toISOString();
+    const initialMode: SessionMode = message.mode ?? "regular";
+    const initialCap = initialMode === "long_note" ? LONG_NOTE_SILENCE_CAP_MS : CORE_SILENCE_CAP_MS;
 
     const session: InFlightSession = {
       sessionId: message.sessionId,
@@ -63,10 +171,16 @@ export class SessionService {
       deepgram: null,
       timeout: setTimeout(() => this.handleTimeout(message.sessionId), this.env.sessionTimeoutMs),
       silenceTimer: null,
-      silenceCapMs: CORE_SILENCE_CAP_MS,
-      vad: new SilenceDetector(undefined, (msg, meta) =>
-        this.logger.info({ sessionId: message.sessionId, ...meta }, msg),
-      ),
+      silenceCapMs: initialCap,
+      vad: new SilenceDetector(undefined, (msg, meta) => {
+        // Drop the silence-started / silence-broken flap entirely — they are
+        // dozens-per-second and only useful when debugging the detector
+        // itself. Keep calibration / speech-detected / endpoint at info.
+        if (msg.includes("silence started") || msg.includes("silence broken")) return;
+        this.logger.info({ sessionId: message.sessionId, ...meta }, msg);
+      }),
+      vadEndpointSuppressed: initialMode === "long_note",
+      mode: initialMode,
       closed: false,
     };
     this.armSilenceTimer(session);
@@ -117,7 +231,7 @@ export class SessionService {
     target.deepgram?.send(payload);
 
     const decision = target.vad.feed(payload);
-    if (decision === "endpoint") {
+    if (decision === "endpoint" && !target.vadEndpointSuppressed) {
       void this.terminate(target, "endpoint", "core:vad");
     }
   }
@@ -155,6 +269,7 @@ export class SessionService {
       isFinal: false,
     };
     this.sendToEar(session, msg);
+    this.notifyTranscriptListeners(session.sessionId, "partial", text);
   }
 
   private onFinal(session: InFlightSession, text: string, confidence: number | null): void {
@@ -162,6 +277,17 @@ export class SessionService {
     session.finals.push(text);
     if (confidence !== null) session.transcriptConfidence = confidence;
     this.armSilenceTimer(session);
+    this.notifyTranscriptListeners(session.sessionId, "final", text);
+  }
+
+  private notifyTranscriptListeners(sessionId: string, kind: "partial" | "final", text: string): void {
+    for (const listener of this.transcriptListeners) {
+      try {
+        listener(sessionId, kind, text);
+      } catch (err) {
+        this.logger.warn({ err, kind }, "Transcript listener threw, continuing");
+      }
+    }
   }
 
   // Backend silence cap: if Deepgram has not produced any non-empty transcript

@@ -113,7 +113,10 @@ export class DeepgramClient {
         const text = (alt?.transcript as string | undefined) ?? "";
         const confidence = (alt?.confidence as number | undefined) ?? null;
         const isFinal: boolean = !!msg?.is_final;
-        if (!text) return;
+        if (!text) {
+          this.logger.debug({ isFinal, confidence }, "STT empty Results event (Deepgram processed audio but found no speech)");
+          return;
+        }
         if (isFinal) {
           this.logger.info(`STT FINAL  | ${text}` + (confidence !== null ? `  (conf=${confidence.toFixed(2)})` : ""));
           callbacks.onFinal(text, confidence);

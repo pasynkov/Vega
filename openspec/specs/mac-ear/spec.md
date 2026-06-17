@@ -179,3 +179,26 @@ On a successful connect the Ear SHALL immediately send a `register` message cont
 - **THEN** the status item SHALL show `error`
 - **AND** the Ear SHALL attempt reconnection with backoff starting at 1 second and capped at 30 seconds
 - **AND** no `wake_detected` events SHALL be emitted while the connection is down
+
+### Requirement: Long-note mode handling
+
+The Ear SHALL recognise a per-session `mode` field on `session_start` and a Core-initiated `arm_capture` message. The two modes are `regular` (default; existing behaviour) and `long_note`.
+
+When in `long_note` mode the Ear SHALL:
+- Suppress the local VAD endpoint decision (the detector keeps running for logs but never fires `session_end` of reason `vad`).
+- Reschedule its safety capture cap to ~60 seconds, reset on every incoming partial or final transcript event.
+- Play the `ack_continue` cue (Submarine) when the mode is entered via `arm_capture`.
+
+When the Ear receives `arm_capture` it SHALL open a fresh capture session under the requested mode without requiring a wake-word, and SHALL emit a `session_start` carrying the same `mode` field.
+
+#### Scenario: arm_capture opens a fresh long-note session
+
+- **WHEN** the Ear receives `{ "type": "arm_capture", "mode": "long_note" }` and no session is active
+- **THEN** the Ear SHALL allocate a new sessionId, play `ack_continue`, and send `session_start` with `mode: "long_note"`
+- **AND** the new session SHALL run with the VAD endpoint suppressed and a ~60 second safety cap
+
+#### Scenario: long-note session ends by Core endpoint, not local VAD
+
+- **WHEN** the user finishes dictating and Core sends `session_end` of reason `endpoint`
+- **THEN** the Ear SHALL play the endpoint cue and return to `idle`
+- **AND** the local VAD SHALL NOT have fired during the long-note session

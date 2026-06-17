@@ -30,6 +30,7 @@ DerivedData/
 # Vega runtime
 recordings/*
 !recordings/.gitkeep
+output/notes/
 
 # IDE / tooling
 .vscode/

@@ -4,12 +4,22 @@ enum CueSound: String {
     case wake
     case endpoint
     case error
+    case ackDone
+    case ackContinue
+    case ackThinking
+    case ackSuccess
+    case ackError
 
     var systemSoundPath: String {
         switch self {
         case .wake: return "/System/Library/Sounds/Purr.aiff"
         case .endpoint: return "/System/Library/Sounds/Pop.aiff"
         case .error: return "/System/Library/Sounds/Basso.aiff"
+        case .ackDone: return "/System/Library/Sounds/Tink.aiff"
+        case .ackContinue: return "/System/Library/Sounds/Submarine.aiff"
+        case .ackThinking: return "/System/Library/Sounds/Bottle.aiff"
+        case .ackSuccess: return "/System/Library/Sounds/Glass.aiff"
+        case .ackError: return "/System/Library/Sounds/Basso.aiff"
         }
     }
 }

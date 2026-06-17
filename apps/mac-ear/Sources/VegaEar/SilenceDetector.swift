@@ -25,6 +25,16 @@ final class SilenceDetector {
     private var noiseFloorRms: Double = 0
     private var calibrationSamples: [Double] = []
     private var lastLoggedState: String = ""
+    // When suppressEndpoint is true, the detector keeps computing RMS for
+    // logging but never returns .endpoint. Used by long-note mode.
+    private var suppressEndpoint = false
+
+    func setEndpointSuppressed(_ suppressed: Bool) {
+        if suppressEndpoint != suppressed {
+            NSLog("[VegaEar] VAD endpoint suppression \(suppressed ? "ON" : "OFF")")
+        }
+        suppressEndpoint = suppressed
+    }
 
     init(config: Config = Config()) {
         self.config = config
@@ -87,8 +97,13 @@ final class SilenceDetector {
             }
             if let started = silenceStartedAt,
                Date().timeIntervalSince(started) * 1000 >= Double(config.endSilenceMs) {
-                NSLog("[VegaEar] VAD endpoint: sustained silence \(config.endSilenceMs) ms")
-                return .endpoint
+                if suppressEndpoint {
+                    // Don't fire endpoint in long-note mode; let safety cap own termination.
+                    logState("silence-suppressed")
+                } else {
+                    NSLog("[VegaEar] VAD endpoint: sustained silence \(config.endSilenceMs) ms")
+                    return .endpoint
+                }
             }
             logState("silence")
         } else {

@@ -33,3 +33,7 @@ The existing `vega-core` capability gains the LLM orchestration spine described 
 - A SQLite database file appears under Core's data directory holding `Memory` rows and LangGraph conversation checkpoints. The path is configurable; default lives next to `recordings/`.
 - No new external ports, no new network surface, no change to the existing ear-protocol contract.
 - No production users. Orchestration runs only when explicitly invoked from the test harness in this change.
+
+## Follow-up
+
+The next change SHALL bridge the existing `EarGateway.final_transcript` events to `ConversationService.handleTurn("default", text)`. Open questions for that change: per-utterance turn versus buffer-until-silence, barge-in cancellation of in-flight LLM calls, and what cue (if any) plays while the supervisor is thinking. None of this work is in scope here; the spine is intentionally testable in isolation through the LLM harness.

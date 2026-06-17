@@ -48,12 +48,23 @@ function resolveRecordingsDir(): string {
   return resolve(process.cwd(), "recordings");
 }
 
+function resolveDbPath(recordingsDir: string): string {
+  const explicit = process.env.VEGA_DB_PATH;
+  if (explicit && explicit !== "") {
+    return resolve(explicit);
+  }
+  return resolve(recordingsDir, "vega.sqlite");
+}
+
 @Injectable()
 export class EnvConfig {
   readonly deepgramApiKey: string = requiredEnv("DEEPGRAM_API_KEY");
+  readonly anthropicApiKey: string = requiredEnv("ANTHROPIC_API_KEY");
   readonly earWsHost: string = optionalEnv("EAR_WS_HOST", "127.0.0.1");
   readonly earWsPort: number = intEnv("EAR_WS_PORT", 7777);
   readonly deepgramLanguage: string = optionalEnv("DEEPGRAM_LANGUAGE", "ru");
   readonly sessionTimeoutMs: number = intEnv("SESSION_TIMEOUT_MS", 30_000);
   readonly recordingsDir: string = resolveRecordingsDir();
+  readonly vegaDbPath: string = resolveDbPath(this.recordingsDir);
+  readonly llmPingOnBoot: boolean = process.env.VEGA_LLM_PING_ON_BOOT === "1";
 }

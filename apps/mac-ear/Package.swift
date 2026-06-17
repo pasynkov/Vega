@@ -28,6 +28,11 @@ let package = Package(
                 .process("Resources"),
                 .copy("../../Vendor/PvModel/porcupine_params.pv")
             ]
+        ),
+        .testTarget(
+            name: "VegaEarTests",
+            dependencies: ["VegaEar"],
+            path: "Tests/VegaEarTests"
         )
     ]
 )

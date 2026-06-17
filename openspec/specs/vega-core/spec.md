@@ -123,3 +123,24 @@ A second SIGINT/SIGTERM SHALL force the process to exit immediately with a non-z
 - **THEN** Core SHALL terminate every in-flight session with initiator `core:shutdown`
 - **AND** SHALL close the Ear WebSocket connections and the WS server
 - **AND** the process SHALL exit within 2 seconds
+
+### Requirement: Long-note mode silence cap and termination
+
+A session opened under `long_note` mode (Ear sent `session_start` with `mode: "long_note"`) SHALL run with a ~60 second silence cap measured from the last partial OR final transcript, and with the per-session VAD-driven `core:vad` termination suppressed. The Core-side silence cap and the Ear-side safety cap together act as backstops.
+
+A new termination initiator label `core:long_note_end` SHALL be used when the session is terminated by the `end_long_note_mode` tool persisting the long note and closing the session.
+
+The `notes` domain SHALL expose an `enable_long_note_mode` tool that, instead of mutating the active regular session, dispatches an `arm_capture` message to the connected Ear so a fresh long-note session is opened. The original short utterance terminates normally via its own VAD / silence cap.
+
+#### Scenario: long-note session uses the relaxed cap from start
+
+- **WHEN** the Ear sends `session_start` with `mode: "long_note"`
+- **THEN** Core SHALL set the session's silence cap to ~60 seconds
+- **AND** Core SHALL suppress the per-session VAD-driven `core:vad` termination for the lifetime of the session
+
+#### Scenario: long-note end via tool
+
+- **WHEN** the `end_long_note_mode(cleanText)` tool runs successfully for an active long-note session
+- **THEN** Core SHALL persist the note to `output/notes/`
+- **AND** Core SHALL terminate the session with reason `endpoint` and initiator `core:long_note_end`
+- **AND** Core SHALL send the standard endpoint cue and `session_end` to the Ear

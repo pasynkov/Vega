@@ -12,8 +12,20 @@ export type EarEndReason = z.infer<typeof EarEndReasonEnum>;
 export const CoreEndReasonEnum = z.enum(["endpoint", "timeout", "stt_error", "user"]);
 export type CoreEndReason = z.infer<typeof CoreEndReasonEnum>;
 
-export const CueEnum = z.enum(["wake", "endpoint", "error"]);
+export const CueEnum = z.enum([
+  "wake",
+  "endpoint",
+  "error",
+  "ack_done",
+  "ack_continue",
+  "ack_thinking",
+  "ack_success",
+  "ack_error",
+]);
 export type Cue = z.infer<typeof CueEnum>;
+
+export const SessionModeEnum = z.enum(["regular", "long_note"]);
+export type SessionMode = z.infer<typeof SessionModeEnum>;
 
 export const WakeActionEnum = z.enum(["proceed", "yield"]);
 export type WakeAction = z.infer<typeof WakeActionEnum>;
@@ -45,6 +57,7 @@ export const SessionStartMessageSchema = z.object({
   userId: z.string().nullable(),
   sampleRate: z.number().int().positive(),
   codec: CodecEnum,
+  mode: SessionModeEnum.optional(),
 });
 export type SessionStartMessage = z.infer<typeof SessionStartMessageSchema>;
 
@@ -114,12 +127,31 @@ export const CoreSessionEndMessageSchema = z.object({
 });
 export type CoreSessionEndMessage = z.infer<typeof CoreSessionEndMessageSchema>;
 
+export const SessionModeChangeMessageSchema = z.object({
+  type: z.literal("session_mode"),
+  sessionId: uuid,
+  mode: SessionModeEnum,
+});
+export type SessionModeChangeMessage = z.infer<typeof SessionModeChangeMessageSchema>;
+
+// Backend-initiated capture arming. Instructs the Ear to open a fresh
+// capture session under the given mode without requiring a wake-word.
+// The Ear plays the mode-appropriate cue, then sends its normal
+// `session_start` with the same `mode` field set.
+export const ArmCaptureMessageSchema = z.object({
+  type: z.literal("arm_capture"),
+  mode: SessionModeEnum,
+});
+export type ArmCaptureMessage = z.infer<typeof ArmCaptureMessageSchema>;
+
 export const CoreToEarMessageSchema = z.discriminatedUnion("type", [
   AckMessageSchema,
   WakeAckMessageSchema,
   PartialTranscriptMessageSchema,
   FinalTranscriptMessageSchema,
   PlayCueMessageSchema,
+  SessionModeChangeMessageSchema,
+  ArmCaptureMessageSchema,
   CoreSessionEndMessageSchema,
 ]);
 export type CoreToEarMessage = z.infer<typeof CoreToEarMessageSchema>;

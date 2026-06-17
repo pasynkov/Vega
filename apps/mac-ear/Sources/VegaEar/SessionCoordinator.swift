@@ -10,7 +10,8 @@ final class SessionCoordinator {
     private let socket: EarSocket
     private let cues: CuePlayer
     private let status: StatusItemController
-    private let safetyCapMs: Int = 30_000
+    private let regularSafetyCapMs: Int = 30_000
+    private let longNoteSafetyCapMs: Int = 60_000
 
     private let serial = DispatchQueue(label: "vega.ear.coordinator")
     private var activeSessionId: String?
@@ -20,6 +21,7 @@ final class SessionCoordinator {
     private var rmsLastReportAt = Date()
     private var bytesSentInSession = 0
     private var silenceDetector: SilenceDetector?
+    private var sessionMode: SessionMode = .regular
     var onSessionStateChange: ((Bool) -> Void)?
     private var sinkCallbackCount = 0
 
@@ -135,6 +137,7 @@ final class SessionCoordinator {
             self.rmsAccumulator.removeAll(keepingCapacity: true)
             self.rmsLastReportAt = Date()
             self.silenceDetector = SilenceDetector()
+            self.sessionMode = .regular
             self.cues.play(.wake)
             self.status.setState(.listening)
             NSLog("[VegaEar] Wake detected (score=\(score)), session=\(sessionId)")
@@ -151,7 +154,51 @@ final class SessionCoordinator {
                 sessionId: sessionId,
                 userId: nil,
                 sampleRate: Int(self.audio.currentSampleRate),
-                codec: .linear16
+                codec: .linear16,
+                mode: .regular
+            )
+            self.socket.sendJSON(startMsg)
+
+            for buffered in self.audio.drainPreRoll() {
+                self.streamAudio(buffered)
+            }
+
+            self.armSafetyTimer(for: sessionId)
+            self.status.setState(.streaming)
+            self.onSessionStateChange?(true)
+        }
+    }
+
+    private func handleArmCapture(mode: SessionMode) {
+        serial.async {
+            guard !self.paused else { return }
+            guard self.activeSessionId == nil else {
+                NSLog("[VegaEar] arm_capture ignored: session already active")
+                return
+            }
+            let sessionId = UUID().uuidString.lowercased()
+            self.activeSessionId = sessionId
+            self.bytesSentInSession = 0
+            self.rmsAccumulator.removeAll(keepingCapacity: true)
+            self.rmsLastReportAt = Date()
+            self.silenceDetector = SilenceDetector()
+            self.sessionMode = mode
+            self.silenceDetector?.setEndpointSuppressed(mode == .longNote)
+            NSLog("[VegaEar] arm_capture: starting session=\(sessionId) mode=\(mode.rawValue)")
+
+            // Cue: long_note plays Submarine (ack_continue), regular plays wake.
+            switch mode {
+            case .longNote: self.cues.play(.ackContinue)
+            case .regular: self.cues.play(.wake)
+            }
+
+            let startMsg = SessionStartMessage(
+                deviceId: self.deviceId,
+                sessionId: sessionId,
+                userId: nil,
+                sampleRate: Int(self.audio.currentSampleRate),
+                codec: .linear16,
+                mode: mode
             )
             self.socket.sendJSON(startMsg)
 
@@ -225,13 +272,14 @@ final class SessionCoordinator {
     }
 
     private func armSafetyTimer(for sessionId: String) {
+        let capMs = sessionMode == .longNote ? longNoteSafetyCapMs : regularSafetyCapMs
         safetyTimer?.cancel()
         let timer = DispatchSource.makeTimerSource(queue: serial)
-        timer.schedule(deadline: .now() + .milliseconds(safetyCapMs))
+        timer.schedule(deadline: .now() + .milliseconds(capMs))
         timer.setEventHandler { [weak self] in
             guard let self else { return }
             guard self.activeSessionId == sessionId else { return }
-            NSLog("[VegaEar] Ear ending session=\(sessionId) initiator=ear:safety_timer reason=timeout bytesSent=\(self.bytesSentInSession)")
+            NSLog("[VegaEar] Ear ending session=\(sessionId) initiator=ear:safety_timer reason=timeout bytesSent=\(self.bytesSentInSession) mode=\(self.sessionMode.rawValue) cap=\(capMs)")
             self.socket.sendJSON(EarSessionEndMessage(sessionId: sessionId, reason: .timeout))
             self.cues.play(.endpoint)
             self.activeSessionId = nil
@@ -262,6 +310,11 @@ final class SessionCoordinator {
             case .wake: cues.play(.wake)
             case .endpoint: cues.play(.endpoint)
             case .error: cues.play(.error)
+            case .ackDone: cues.play(.ackDone)
+            case .ackContinue: cues.play(.ackContinue)
+            case .ackThinking: cues.play(.ackThinking)
+            case .ackSuccess: cues.play(.ackSuccess)
+            case .ackError: cues.play(.ackError)
             }
         case .sessionEnd(let m):
             serial.async {
@@ -284,9 +337,38 @@ final class SessionCoordinator {
             }
         case .partialTranscript(let m):
             NSLog("[VegaEar] partial: \(m.text)")
+            serial.async { self.bumpSafetyOnTranscript(sessionId: m.sessionId) }
         case .finalTranscript(let m):
             NSLog("[VegaEar] final: \(m.text)")
+            serial.async { self.bumpSafetyOnTranscript(sessionId: m.sessionId) }
+        case .sessionMode(let m):
+            serial.async { self.applySessionMode(m) }
+        case .armCapture(let m):
+            handleArmCapture(mode: m.mode)
+        case .unknownCue(let raw):
+            NSLog("[VegaEar] Ignoring unknown cue from Core: \(raw)")
+        case .unknownSessionMode(let raw):
+            NSLog("[VegaEar] Ignoring unknown session_mode value from Core: \(raw)")
         }
+    }
+
+    private func applySessionMode(_ msg: SessionModeChangeMessage) {
+        guard activeSessionId == msg.sessionId else {
+            NSLog("[VegaEar] session_mode for inactive session=\(msg.sessionId), ignoring")
+            return
+        }
+        sessionMode = msg.mode
+        NSLog("[VegaEar] session_mode applied: \(msg.mode.rawValue)")
+        silenceDetector?.setEndpointSuppressed(msg.mode == .longNote)
+        armSafetyTimer(for: msg.sessionId)
+        if msg.mode == .longNote {
+            status.setState(.streaming)
+        }
+    }
+
+    private func bumpSafetyOnTranscript(sessionId: String) {
+        guard activeSessionId == sessionId, sessionMode == .longNote else { return }
+        armSafetyTimer(for: sessionId)
     }
 
     // Naive decimation to 16 kHz for Porcupine. Computes stride from the

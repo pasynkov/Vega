@@ -26,6 +26,16 @@ public enum Cue: String, Codable, Sendable {
     case wake
     case endpoint
     case error
+    case ackDone = "ack_done"
+    case ackContinue = "ack_continue"
+    case ackThinking = "ack_thinking"
+    case ackSuccess = "ack_success"
+    case ackError = "ack_error"
+}
+
+public enum SessionMode: String, Codable, Sendable {
+    case regular
+    case longNote = "long_note"
 }
 
 public enum WakeAction: String, Codable, Sendable {
@@ -75,19 +85,21 @@ public struct SessionStartMessage: Codable, Sendable, Equatable {
     public let userId: String?
     public let sampleRate: Int
     public let codec: Codec
+    public let mode: SessionMode?
 
-    public init(deviceId: String, sessionId: String, userId: String?, sampleRate: Int, codec: Codec) {
+    public init(deviceId: String, sessionId: String, userId: String?, sampleRate: Int, codec: Codec, mode: SessionMode? = nil) {
         self.type = "session_start"
         self.deviceId = deviceId
         self.sessionId = sessionId
         self.userId = userId
         self.sampleRate = sampleRate
         self.codec = codec
+        self.mode = mode
     }
 
     // Encode `userId` even when nil so the JSON shape matches the TypeScript schema.
     enum CodingKeys: String, CodingKey {
-        case type, deviceId, sessionId, userId, sampleRate, codec
+        case type, deviceId, sessionId, userId, sampleRate, codec, mode
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -103,6 +115,7 @@ public struct SessionStartMessage: Codable, Sendable, Equatable {
         }
         try c.encode(sampleRate, forKey: .sampleRate)
         try c.encode(codec, forKey: .codec)
+        if let mode { try c.encode(mode, forKey: .mode) }
     }
 }
 
@@ -176,6 +189,28 @@ public struct PlayCueMessage: Codable, Sendable, Equatable {
     }
 }
 
+public struct ArmCaptureMessage: Codable, Sendable, Equatable {
+    public let type: String
+    public let mode: SessionMode
+
+    public init(mode: SessionMode) {
+        self.type = "arm_capture"
+        self.mode = mode
+    }
+}
+
+public struct SessionModeChangeMessage: Codable, Sendable, Equatable {
+    public let type: String
+    public let sessionId: String
+    public let mode: SessionMode
+
+    public init(sessionId: String, mode: SessionMode) {
+        self.type = "session_mode"
+        self.sessionId = sessionId
+        self.mode = mode
+    }
+}
+
 public struct CoreSessionEndMessage: Codable, Sendable, Equatable {
     public let type: String
     public let sessionId: String
@@ -215,7 +250,11 @@ public enum CoreToEarMessage: Sendable, Equatable {
     case partialTranscript(PartialTranscriptMessage)
     case finalTranscript(FinalTranscriptMessage)
     case playCue(PlayCueMessage)
+    case sessionMode(SessionModeChangeMessage)
+    case armCapture(ArmCaptureMessage)
     case sessionEnd(CoreSessionEndMessage)
+    case unknownCue(rawCue: String)
+    case unknownSessionMode(rawMode: String)
 }
 
 // MARK: - Decoding helpers
@@ -265,7 +304,28 @@ public struct EarProtocol {
         case "final_transcript":
             return .finalTranscript(try decoder.decode(FinalTranscriptMessage.self, from: data))
         case "play_cue":
-            return .playCue(try decoder.decode(PlayCueMessage.self, from: data))
+            // Tolerate unknown cue values so a newer Core does not break the WS.
+            do {
+                return .playCue(try decoder.decode(PlayCueMessage.self, from: data))
+            } catch {
+                struct RawPlayCue: Decodable { let cue: String }
+                if let raw = try? decoder.decode(RawPlayCue.self, from: data) {
+                    return .unknownCue(rawCue: raw.cue)
+                }
+                throw error
+            }
+        case "session_mode":
+            do {
+                return .sessionMode(try decoder.decode(SessionModeChangeMessage.self, from: data))
+            } catch {
+                struct RawMode: Decodable { let mode: String }
+                if let raw = try? decoder.decode(RawMode.self, from: data) {
+                    return .unknownSessionMode(rawMode: raw.mode)
+                }
+                throw error
+            }
+        case "arm_capture":
+            return .armCapture(try decoder.decode(ArmCaptureMessage.self, from: data))
         case "session_end":
             return .sessionEnd(try decoder.decode(CoreSessionEndMessage.self, from: data))
         default:

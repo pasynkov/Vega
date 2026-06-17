@@ -3,6 +3,14 @@ import { LoggerModule } from "nestjs-pino";
 import pretty from "pino-pretty";
 import { EnvConfigModule } from "./config/env.module";
 import { EarModule } from "./ear/ear.module";
+import { DbModule } from "./db/db.module";
+import { LlmModule } from "./llm/llm.module";
+import { AgentSystemModule } from "./agents/agent-system.module";
+import { SupervisorModule } from "./agents/supervisor/supervisor.module";
+import { MemoryModule } from "./memory/memory.module";
+import { NotesModule } from "./notes/notes.module";
+import { ConversationModule } from "./conversation/conversation.module";
+import { SessionWatcherModule } from "./session-watcher/session-watcher.module";
 
 // Use pino-pretty as a synchronous stream rather than a worker-thread
 // transport. The transport keeps the event loop alive after app.close()
@@ -24,13 +32,28 @@ const prettyStream = pretty({
         level: process.env.LOG_LEVEL ?? "debug",
         stream: prettyStream,
         redact: {
-          paths: ["DEEPGRAM_API_KEY", "*.DEEPGRAM_API_KEY", "*.deepgramApiKey"],
+          paths: [
+            "DEEPGRAM_API_KEY",
+            "*.DEEPGRAM_API_KEY",
+            "*.deepgramApiKey",
+            "ANTHROPIC_API_KEY",
+            "*.ANTHROPIC_API_KEY",
+            "*.anthropicApiKey",
+          ],
           censor: "[redacted]",
         },
       },
     }),
     EnvConfigModule,
+    DbModule,
+    LlmModule,
+    AgentSystemModule,
+    SupervisorModule,
     EarModule,
+    MemoryModule,
+    NotesModule,
+    ConversationModule,
+    SessionWatcherModule,
   ],
 })
 export class AppModule {}
