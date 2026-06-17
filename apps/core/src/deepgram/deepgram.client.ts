@@ -63,7 +63,7 @@ export class DeepgramClient {
     this.logger.info(
       {
         language: this.env.deepgramLanguage,
-        model: "nova-2",
+        model: "nova-3",
         encoding: "linear16",
         sampleRate,
       },
@@ -72,7 +72,7 @@ export class DeepgramClient {
 
     const live = this.client.listen.live({
       language: this.env.deepgramLanguage,
-      model: "nova-2",
+      model: "nova-3",
       encoding: "linear16",
       sample_rate: sampleRate,
       channels: 1,
