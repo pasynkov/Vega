@@ -24,10 +24,10 @@ final class AudioEngine {
     private var engine = AVAudioEngine()
     private let queue = DispatchQueue(label: "vega.ear.audio", qos: .userInitiated)
     private var sinks: [PCMSink] = []
-    // Pre-roll keeps about half a second of audio so a session can capture
-    // the syllable just before the wake-word click/detection. Larger windows
-    // dump multi-second snippets of unrelated ambient audio into the session.
-    private var preRoll = RingBuffer<Data>(capacityHint: 5)
+    // Byte-budgeted pre-roll holding ~1 second of audio regardless of rate.
+    private var preRollBuffers: [Data] = []
+    private var preRollByteCount: Int = 0
+    private var preRollMaxBytes: Int = 96_000
     private(set) var isRunning = false
     private(set) var currentDevice: MicDevice?
     private(set) var currentSampleRate: Double = 48_000
@@ -96,15 +96,29 @@ final class AudioEngine {
 
     func drainPreRoll() -> [Data] {
         var copy: [Data] = []
-        queue.sync { copy = preRoll.drain() }
+        queue.sync {
+            copy = preRollBuffers
+            preRollBuffers.removeAll(keepingCapacity: true)
+            preRollByteCount = 0
+        }
         return copy
+    }
+
+    private func pushPreRoll(_ data: Data) {
+        preRollBuffers.append(data)
+        preRollByteCount += data.count
+        while preRollByteCount > preRollMaxBytes && preRollBuffers.count > 1 {
+            let dropped = preRollBuffers.removeFirst()
+            preRollByteCount -= dropped.count
+        }
     }
 
     private func installTap() {
         let input = engine.inputNode
         let inputFormat = input.outputFormat(forBus: 0)
         currentSampleRate = inputFormat.sampleRate
-        NSLog("[VegaEar] tap installing: format=\(inputFormat) sampleRate=\(currentSampleRate) channels=\(inputFormat.channelCount)")
+        preRollMaxBytes = Int(currentSampleRate) * MemoryLayout<Int16>.size  // ~1 second
+        NSLog("[VegaEar] tap installing: format=\(inputFormat) sampleRate=\(currentSampleRate) channels=\(inputFormat.channelCount) preRollMaxBytes=\(preRollMaxBytes)")
         input.removeTap(onBus: 0)
         tapCallbackCount = 0
         tapBytesProducedSinceReport = 0
@@ -125,7 +139,7 @@ final class AudioEngine {
             }
             if data.isEmpty { return }
             self.queue.async {
-                self.preRoll.push(data)
+                self.pushPreRoll(data)
                 if self.sinks.isEmpty && self.tapCallbackCount <= 3 {
                     NSLog("[VegaEar] tap callback #\(self.tapCallbackCount): WARNING sinks is empty, data discarded")
                 }
