@@ -1,0 +1,40 @@
+# Node
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.npm
+.eslintcache
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Swift / Xcode
+.build/
+Packages/
+xcuserdata/
+*.xcuserstate
+DerivedData/
+.swiftpm/
+
+# macOS
+.DS_Store
+
+# Vega runtime
+recordings/*
+!recordings/.gitkeep
+
+# IDE / tooling
+.vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+.claude/

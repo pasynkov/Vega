@@ -1,0 +1,23 @@
+{
+  "name": "vega",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Vega — personal voice assistant. Mac Ear + NestJS Core.",
+  "workspaces": [
+    "packages/*",
+    "apps/core"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "core:dev": "npm run dev -w @vega/core",
+    "protocol:build": "npm run build -w @vega/ear-protocol",
+    "protocol:test": "npm run test -w @vega/ear-protocol"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
