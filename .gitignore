@@ -19,7 +19,6 @@ pnpm-debug.log*
 
 # Swift / Xcode
 .build/
-Packages/
 xcuserdata/
 *.xcuserstate
 DerivedData/
