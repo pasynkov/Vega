@@ -1,4 +1,10 @@
-## ADDED Requirements
+# mac-ear Specification
+
+## Purpose
+
+The Vega Ear for macOS — a menu-bar app that always-listens for a wake word, captures the user's task as PCM, streams it to Vega Core, plays audible cues at session boundaries, and persists the user's input device choice. The Ear owns microphone capture and the user-facing UI; Core owns STT and persistence.
+
+## Requirements
 
 ### Requirement: Menu-bar presence and lifecycle
 
@@ -54,6 +60,8 @@ The Ear SHALL continuously stream microphone audio through a wake-word detector 
 
 The wake-word detector SHALL be accessed only through a `WakeWordDetector` Swift protocol. The MVP implementation behind this protocol SHALL use Porcupine with the keyword "Vega" and a Picovoice access key loaded from secure storage. No call site outside the implementation type SHALL reference Porcupine APIs directly.
 
+The Ear SHALL also expose a debug "Trigger test wake" / "Stop listening" menu-bar item that synthesises a `wake_detected` event without going through the keyword detector. This lets the developer drive the rest of the pipeline (capture → Core → Deepgram → recordings) before a `Vega.ppn` model has been provisioned. The menu item's label flips based on whether a session is active.
+
 #### Scenario: Wake word is spoken
 
 - **WHEN** the user speaks "Vega" within microphone range while the app is `idle`
@@ -76,34 +84,38 @@ The wake-word detector SHALL be accessed only through a `WakeWordDetector` Swift
 
 ### Requirement: Audible feedback cues
 
-The Ear SHALL play a system sound on wake-word detection ("wake cue") and a different system sound on end-of-utterance signaled by Core ("endpoint cue").
+The Ear SHALL play a system sound on wake-word detection ("wake cue") and a different system sound on end-of-utterance ("endpoint cue").
 
-The wake cue SHALL be `/System/Library/Sounds/Tink.aiff`. The endpoint cue SHALL be `/System/Library/Sounds/Pop.aiff`. A third "error cue" using `/System/Library/Sounds/Basso.aiff` SHALL be played when a session ends with a non-success reason.
+The wake cue SHALL be a short, distinct system sound (the MVP ships `Purr.aiff`, chosen after Tink/Glass/Bottle were rejected by the developer as too sharp). The endpoint cue SHALL be `/System/Library/Sounds/Pop.aiff`. A third "error cue" using `/System/Library/Sounds/Basso.aiff` SHALL be played when a session ends with a non-success reason. All three sounds are loaded from `/System/Library/Sounds/`; the choice is a one-line constant and may evolve without re-spec.
 
 #### Scenario: Successful capture cycle
 
 - **WHEN** the user says "Vega, write down to buy milk"
-- **THEN** `Tink.aiff` SHALL play once at wake-word detection
-- **AND** `Pop.aiff` SHALL play once when Core signals `final_transcript` or `play_cue` of `endpoint`
+- **THEN** the wake cue SHALL play once at wake-word detection
+- **AND** the endpoint cue SHALL play once when the local VAD endpoints or Core signals `play_cue` of `endpoint`
 - **AND** no other cue SHALL play during the cycle
 
 #### Scenario: Session ends with error
 
 - **WHEN** Core closes the session with a `session_end` reason other than `vad` or `endpoint`, or the WebSocket disconnects mid-session
-- **THEN** `Basso.aiff` SHALL play once
+- **THEN** the error cue SHALL play once
 - **AND** the status item SHALL transition back to `idle` (or `error` if the disconnect persists)
 
-### Requirement: Audio capture and OPUS encoding
+### Requirement: Audio capture
 
-After a `wake_detected` event the Ear SHALL begin capturing 48 kHz mono PCM (signed 16-bit little-endian) from the default input device. Captured audio SHALL be streamed unencoded to Core as `audio_frame` binary messages with the protocol's session header; the `session_start` message SHALL declare `codec: "linear16"`. Encoding the persisted artifact to OGG/OPUS is Core's responsibility, not the Ear's.
+After a `wake_detected` event the Ear SHALL begin capturing mono PCM (signed 16-bit little-endian) from the user's chosen input device at that device's native sample rate. Captured audio SHALL be streamed unencoded to Core as `audio_frame` binary messages with the protocol's session header; the `session_start` message SHALL declare `codec: "linear16"` and report the actual `sampleRate` so Core configures Deepgram and ffmpeg accordingly. Encoding the persisted artifact to OGG/OPUS is Core's responsibility, not the Ear's.
 
-The Ear SHALL NOT itself perform speech-to-text. The Ear SHALL NOT itself implement end-of-utterance detection beyond a hard safety cap.
+The Ear SHALL expose a "Microphone" submenu in the menu-bar item that lists every audio input device discovered via CoreAudio plus a "System default" entry. Picking a device SHALL retarget capture without changing the macOS system-wide default. The chosen device SHALL be persisted in `Application Support/Vega/preferences.json` and restored on next launch.
+
+A pre-roll buffer SHALL retain approximately the last one second of audio (sized in bytes relative to the live sample rate, so a Bluetooth-HFP capture at 16 kHz holds the same wall-clock duration as a 48 kHz built-in capture) and SHALL be prepended to the session when a wake event fires.
+
+The Ear SHALL NOT itself perform speech-to-text.
 
 #### Scenario: Wake triggers capture
 
 - **WHEN** a `wake_detected` event is emitted and the WebSocket to Core is open
 - **THEN** within 200 ms the Ear SHALL send a `session_start` message with a freshly generated `sessionId`
-- **AND** audio capture SHALL begin from the same buffer that fed the wake-word detector, including a pre-roll of approximately 300 ms preceding the detection
+- **AND** audio capture SHALL begin from the same buffer that fed the wake-word detector, including the pre-roll preceding the detection
 
 #### Scenario: Audio frames are sent while user speaks
 
@@ -117,6 +129,19 @@ The Ear SHALL NOT itself perform speech-to-text. The Ear SHALL NOT itself implem
 - **THEN** the Ear SHALL send `session_end` with reason `timeout`
 - **AND** SHALL stop sending audio frames
 - **AND** SHALL play the endpoint cue
+
+### Requirement: Local silence-based endpoint
+
+The Ear SHALL run a streaming RMS-based silence detector on the captured PCM and SHALL terminate a session locally when sustained silence follows observed speech. The detector SHALL self-calibrate per session: the first ~600 ms of capture SHALL be treated as ambient and the 75th-percentile RMS over that window SHALL become the session's noise floor. Speech SHALL be declared when RMS rises sufficiently above the floor; sustained silence (RMS sitting near the floor for ~3 seconds after speech was observed) SHALL fire the endpoint.
+
+On endpoint the Ear SHALL play the endpoint cue locally, send `session_end` with reason `vad`, and return its menu-bar state to `idle` without waiting for Core's echo. This SHALL be the primary end-of-session signal in normal use; Core's own VAD and the safety timer are fallbacks.
+
+#### Scenario: Adaptive endpoint fires after a phrase
+
+- **WHEN** the user speaks a complete phrase and then stops
+- **THEN** the Ear SHALL log the calibration result, the moment speech was detected, the moment silence started, and the endpoint
+- **AND** SHALL emit `session_end` with reason `vad` within ~3 seconds of the user falling silent
+- **AND** SHALL play the endpoint cue without waiting on Core
 
 ### Requirement: Stable device identity
 
@@ -138,7 +163,7 @@ The `deviceId` SHALL be a UUID v4 written to `Application Support/Vega/device.js
 
 ### Requirement: WebSocket connection to Core
 
-The Ear SHALL connect to Core's WebSocket endpoint at a configurable URL (default `ws://127.0.0.1:7777/ear`) and SHALL reconnect with exponential backoff on disconnect.
+The Ear SHALL connect to Core's WebSocket endpoint at a configurable URL (default `ws://127.0.0.1:7777/ear`) and SHALL reconnect with exponential backoff with ±25 % jitter, starting at 1 s and doubling up to a cap of 30 s. The backoff SHALL reset to 1 s only after Core has acknowledged the `register` message, so a tight loop is impossible when Core is reachable but immediately rejects the handshake.
 
 On a successful connect the Ear SHALL immediately send a `register` message containing `deviceId`, `deviceName`, and the capabilities the Ear supports (at minimum `mic`, `wake`, `speaker`).
 

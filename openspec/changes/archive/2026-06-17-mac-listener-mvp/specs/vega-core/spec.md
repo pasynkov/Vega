@@ -33,9 +33,13 @@ In the MVP the policy SHALL always be "proceed" — Core SHALL not yet implement
 
 ### Requirement: Streaming STT session via Deepgram
 
-For each `session_start` received from an Ear, Core SHALL open a Deepgram streaming WebSocket configured for the user's language and the session's declared codec (`linear16` in MVP) and SHALL forward audio frames from the Ear to Deepgram until the session ends.
+For each `session_start` received from an Ear, Core SHALL open a streaming WebSocket to Deepgram's `/v1/listen` endpoint configured for the user's language and the session's declared codec (`linear16` in MVP) and sample rate, and SHALL forward audio frames from the Ear to Deepgram until the session ends. Core SHALL connect with the raw `ws` package rather than via the `@deepgram/sdk` client — the official SDK's surface changed incompatibly between major versions and reduces visibility into protocol-level errors.
 
-Core SHALL relay Deepgram's interim transcripts as `partial_transcript` messages to the originating Ear and SHALL relay the final transcript as `final_transcript`. Core SHALL treat Deepgram's `UtteranceEnd` event as the authoritative end-of-utterance signal.
+Core SHALL relay Deepgram's interim transcripts as `partial_transcript` messages to the originating Ear and SHALL relay the final transcript as `final_transcript`. Core SHALL log Deepgram's `UtteranceEnd` event as informational only; the authoritative end-of-utterance signal SHALL be the Ear's local VAD or, as a fallback, Core's own silence detector.
+
+Core SHALL verify the configured `DEEPGRAM_API_KEY` against Deepgram's `/v1/projects` REST endpoint at startup and SHALL log an explicit error if the key is rejected, so a bad key is visible immediately rather than via repeated live-session failures.
+
+Core SHALL run a per-session adaptive silence detector on the incoming PCM identical in semantics to the Ear's, with a 5-second silence window. When it fires, Core SHALL terminate the session with reason `endpoint` (initiator `core:vad`). A separate "silence cap" timer SHALL terminate sessions where Deepgram has produced no transcript at all for the same window.
 
 #### Scenario: Happy-path session
 
