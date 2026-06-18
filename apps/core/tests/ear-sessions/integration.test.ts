@@ -102,16 +102,10 @@ interface CapturedFrame {
 
 function setupHarness(opts: { capMs: number; notesDir: string }) {
   const sentToEar: CapturedFrame[] = [];
-  const send = vi.fn((raw: any) => {
-    const str = typeof raw === "string" ? raw : raw.toString();
-    try {
-      const parsed = JSON.parse(str);
-      sentToEar.push({ type: "json", raw: str, parsed });
-    } catch {
-      sentToEar.push({ type: "json", raw: str, parsed: null });
-    }
+  const emit = vi.fn((event: string, payload: unknown) => {
+    sentToEar.push({ type: "json", raw: JSON.stringify({ event, payload }), parsed: { type: event, ...(payload as object) } });
   });
-  const socket = { send } as any;
+  const socket = { emit } as any;
   const deviceId = "11111111-1111-1111-1111-111111111111";
   const conn = {
     socket,
@@ -119,11 +113,14 @@ function setupHarness(opts: { capMs: number; notesDir: string }) {
     deviceName: "stub",
     capabilities: [],
     activeSessionId: null,
-    activeSessionShortId: null,
   };
   const registry = {
     list: () => [conn],
     setActiveSession: vi.fn(),
+    emitTo: vi.fn((_deviceId: string, event: string, payload: unknown) => {
+      emit(event, payload);
+      return true;
+    }),
   } as any;
 
   const env = {

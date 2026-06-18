@@ -17,7 +17,6 @@ final class RoundTripTests: XCTestCase {
         fixtures = json
     }
 
-    // Compare two JSON values structurally (ignores key order).
     private func equalJSON(_ a: Any, _ b: Any) -> Bool {
         let dataA = try? JSONSerialization.data(withJSONObject: a, options: [.sortedKeys])
         let dataB = try? JSONSerialization.data(withJSONObject: b, options: [.sortedKeys])
@@ -33,89 +32,44 @@ final class RoundTripTests: XCTestCase {
         return try JSONSerialization.data(withJSONObject: value)
     }
 
-    private func roundTripEarToCore(_ key: String) throws {
+    private func roundTrip<T: Codable & Equatable>(_ type: T.Type, key: String) throws {
         let data = try fixtureData(key)
-        let decoded = try EarProtocol.decodeEarToCore(data)
-        let reencoded = try decoded.encode()
+        let decoded = try EarProtocol.decoder.decode(T.self, from: data)
+        let reencoded = try EarProtocol.encoder.encode(decoded)
         let original = try JSONSerialization.jsonObject(with: data)
         let after = try JSONSerialization.jsonObject(with: reencoded)
         XCTAssertTrue(equalJSON(original, after), "round-trip mismatch for \(key)")
     }
 
-    private func roundTripCoreToEar(_ key: String) throws {
-        let data = try fixtureData(key)
-        let decoded = try EarProtocol.decodeCoreToEar(data)
-        let reencoded: Data
-        let encoder = EarProtocol.encoder
-        switch decoded {
-        case .ack(let m): reencoded = try encoder.encode(m)
-        case .wakeAck(let m): reencoded = try encoder.encode(m)
-        case .partialTranscript(let m): reencoded = try encoder.encode(m)
-        case .finalTranscript(let m): reencoded = try encoder.encode(m)
-        case .overlayUpdate(let m): reencoded = try encoder.encode(m)
-        case .listViewUpdate(let m): reencoded = try encoder.encode(m)
-        case .armCapture(let m): reencoded = try encoder.encode(m)
-        case .sessionMode(let m): reencoded = try encoder.encode(m)
-        case .sessionEnd(let m): reencoded = try encoder.encode(m)
-        case .unknownOverlay, .unknownSessionMode:
-            // Tolerance branches — the underlying fixture should never trip these
-            // because every fixture-listed value is known to the binary.
-            XCTFail("Round-trip fixture decoded as unknown tolerance branch for \(key)")
-            return
-        }
-        let original = try JSONSerialization.jsonObject(with: data)
-        let after = try JSONSerialization.jsonObject(with: reencoded)
-        XCTAssertTrue(equalJSON(original, after), "round-trip mismatch for \(key)")
-    }
+    func testRegister() throws { try roundTrip(RegisterMessage.self, key: "register") }
+    func testWakeDetected() throws { try roundTrip(WakeDetectedMessage.self, key: "wake_detected") }
+    func testSessionStart() throws { try roundTrip(SessionStartMessage.self, key: "session_start") }
+    func testEarSessionEnd() throws { try roundTrip(EarSessionEndMessage.self, key: "ear_session_end") }
+    func testAck() throws { try roundTrip(AckMessage.self, key: "ack") }
+    func testWakeAckProceed() throws { try roundTrip(WakeAckMessage.self, key: "wake_ack") }
+    func testWakeAckYield() throws { try roundTrip(WakeAckMessage.self, key: "wake_ack_yield") }
+    func testPartial() throws { try roundTrip(PartialTranscriptMessage.self, key: "partial_transcript") }
+    func testFinal() throws { try roundTrip(FinalTranscriptMessage.self, key: "final_transcript") }
+    func testOverlayListening() throws { try roundTrip(OverlayUpdateMessage.self, key: "overlay_update_listening") }
+    func testOverlayCapturing() throws { try roundTrip(OverlayUpdateMessage.self, key: "overlay_update_capturing") }
+    func testOverlayThinking() throws { try roundTrip(OverlayUpdateMessage.self, key: "overlay_update_thinking") }
+    func testOverlayProcessing() throws { try roundTrip(OverlayUpdateMessage.self, key: "overlay_update_processing") }
+    func testOverlaySuccess() throws { try roundTrip(OverlayUpdateMessage.self, key: "overlay_update_success") }
+    func testOverlayError() throws { try roundTrip(OverlayUpdateMessage.self, key: "overlay_update_error") }
+    func testOverlayIdle() throws { try roundTrip(OverlayUpdateMessage.self, key: "overlay_update_idle") }
+    func testOverlayView() throws { try roundTrip(OverlayUpdateMessage.self, key: "overlay_update_view") }
+    func testListViewOpen() throws { try roundTrip(ListViewUpdateMessage.self, key: "list_view_update_open") }
+    func testListViewEmpty() throws { try roundTrip(ListViewUpdateMessage.self, key: "list_view_update_empty") }
+    func testListViewClose() throws { try roundTrip(ListViewUpdateMessage.self, key: "list_view_update_close") }
+    func testCoreSessionEnd() throws { try roundTrip(CoreSessionEndMessage.self, key: "core_session_end") }
+    func testCoreSessionEndWithDetail() throws { try roundTrip(CoreSessionEndMessage.self, key: "core_session_end_with_detail") }
+    func testSessionModeContinuous() throws { try roundTrip(SessionModeChangeMessage.self, key: "session_mode_continuous") }
+    func testArmCaptureContinuous() throws { try roundTrip(ArmCaptureMessage.self, key: "arm_capture_continuous") }
 
-    func testRegister() throws { try roundTripEarToCore("register") }
-    func testWakeDetected() throws { try roundTripEarToCore("wake_detected") }
-    func testSessionStart() throws { try roundTripEarToCore("session_start") }
-    func testEarSessionEnd() throws { try roundTripEarToCore("ear_session_end") }
-
-    func testAck() throws { try roundTripCoreToEar("ack") }
-    func testWakeAckProceed() throws { try roundTripCoreToEar("wake_ack") }
-    func testWakeAckYield() throws { try roundTripCoreToEar("wake_ack_yield") }
-    func testPartial() throws { try roundTripCoreToEar("partial_transcript") }
-    func testFinal() throws { try roundTripCoreToEar("final_transcript") }
-    func testOverlayListening() throws { try roundTripCoreToEar("overlay_update_listening") }
-    func testOverlayCapturing() throws { try roundTripCoreToEar("overlay_update_capturing") }
-    func testOverlayThinking() throws { try roundTripCoreToEar("overlay_update_thinking") }
-    func testOverlayProcessing() throws { try roundTripCoreToEar("overlay_update_processing") }
-    func testOverlaySuccess() throws { try roundTripCoreToEar("overlay_update_success") }
-    func testOverlayError() throws { try roundTripCoreToEar("overlay_update_error") }
-    func testOverlayIdle() throws { try roundTripCoreToEar("overlay_update_idle") }
-    func testOverlayView() throws { try roundTripCoreToEar("overlay_update_view") }
-    func testListViewOpen() throws { try roundTripCoreToEar("list_view_update_open") }
-    func testListViewEmpty() throws { try roundTripCoreToEar("list_view_update_empty") }
-    func testListViewClose() throws { try roundTripCoreToEar("list_view_update_close") }
-    func testCoreSessionEnd() throws { try roundTripCoreToEar("core_session_end") }
-    func testCoreSessionEndWithDetail() throws { try roundTripCoreToEar("core_session_end_with_detail") }
-
-    func testUnknownOverlayKindFallsBackToToleranceBranch() throws {
-        let payload: [String: Any] = [
-            "type": "overlay_update",
-            "seq": 42,
-            "state": ["kind": "wat", "hint": "x"],
-        ]
-        let data = try JSONSerialization.data(withJSONObject: payload)
-        let decoded = try EarProtocol.decodeCoreToEar(data)
-        if case let .unknownOverlay(seq, raw) = decoded {
-            XCTAssertEqual(seq, 42)
-            XCTAssertEqual(raw.rawKind, "wat")
-            XCTAssertEqual(raw.hint, "x")
-        } else {
-            XCTFail("expected unknownOverlay branch, got \(decoded)")
-        }
-    }
-
-    func testAudioFrameHeaderRoundTrip() {
-        let sessionId = "22222222-2222-4222-8222-222222222222"
-        let payload = Data([1, 2, 3, 4, 5])
-        let wire = AudioFrame.encode(sessionId: sessionId, payload: payload)
-        let decoded = try? AudioFrame.decode(wire)
-        XCTAssertNotNil(decoded)
-        XCTAssertEqual(decoded?.payload, payload)
-        XCTAssertEqual(decoded?.sessionShortId, AudioFrame.sessionShortId(fromUuid: sessionId))
+    func testEventNames() {
+        XCTAssertEqual(EventName.register, "register")
+        XCTAssertEqual(EventName.overlayUpdate, "overlay_update")
+        XCTAssertEqual(EventName.listViewUpdate, "list_view_update")
+        XCTAssertEqual(EventName.audioFrame, "audio_frame")
     }
 }

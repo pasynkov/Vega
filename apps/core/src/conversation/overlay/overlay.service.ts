@@ -10,7 +10,7 @@ export interface OverlaySetOptions {
   ttl?: number;
 }
 
-type Sender = (message: OverlayUpdateMessage) => void;
+type Sender = (event: string, payload: OverlayUpdateMessage) => void;
 type SessionTerminator = () => void | Promise<void>;
 
 interface DeviceBinding {
@@ -85,12 +85,11 @@ export class OverlayService {
 
     binding.seq += 1;
     const message: OverlayUpdateMessage = {
-      type: "overlay_update",
       seq: binding.seq,
       state: validated.data,
     };
     try {
-      binding.send(message);
+      binding.send("overlay_update", message);
     } catch (err) {
       this.logger.warn({ err, deviceId, origin }, "overlay.set: sender threw");
       return false;

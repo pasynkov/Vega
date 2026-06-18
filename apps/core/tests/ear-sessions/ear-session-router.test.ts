@@ -21,8 +21,12 @@ function makeStubSessions() {
 
 function makeRouter() {
   const send = vi.fn();
-  const list = vi.fn(() => [{ deviceId: "dev-1", socket: { send } as any }]);
-  const registry = { list } as any;
+  const list = vi.fn(() => [{ deviceId: "dev-1", socket: { emit: send } as any }]);
+  const emitTo = vi.fn((_deviceId: string, event: string, payload: unknown) => {
+    send(JSON.stringify({ type: event, ...(payload as object) }));
+    return true;
+  });
+  const registry = { list, emitTo } as any;
   const sessions = makeStubSessions();
   const overlay = { set: () => true, cancelTtl: () => {}, bindDevice: () => {}, unbindDevice: () => {} } as any;
   const router = new EarSessionRouter(new StubLogger() as any, registry, sessions, overlay);
@@ -31,7 +35,6 @@ function makeRouter() {
 
 function sessionStart(deviceId: string, sessionId: string, mode: "regular" | "continuous" = "continuous"): SessionStartMessage {
   return {
-    type: "session_start",
     deviceId,
     sessionId,
     userId: null,

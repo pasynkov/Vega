@@ -1,18 +1,15 @@
 {
   "register": {
-    "type": "register",
     "deviceId": "11111111-1111-4111-8111-111111111111",
     "deviceName": "MacBook Pro кухня",
     "capabilities": ["mic", "wake", "speaker"]
   },
   "wake_detected": {
-    "type": "wake_detected",
     "deviceId": "11111111-1111-4111-8111-111111111111",
     "score": 0.92,
     "timestamp": "2026-06-17T11:42:03.123Z"
   },
   "session_start": {
-    "type": "session_start",
     "deviceId": "11111111-1111-4111-8111-111111111111",
     "sessionId": "22222222-2222-4222-8222-222222222222",
     "userId": null,
@@ -20,58 +17,40 @@
     "codec": "linear16"
   },
   "ear_session_end": {
-    "type": "session_end",
     "sessionId": "22222222-2222-4222-8222-222222222222",
     "reason": "user"
   },
   "ack": {
-    "type": "ack",
     "deviceId": "11111111-1111-4111-8111-111111111111"
   },
   "wake_ack": {
-    "type": "wake_ack",
     "action": "proceed"
   },
   "wake_ack_yield": {
-    "type": "wake_ack",
     "action": "yield"
   },
   "partial_transcript": {
-    "type": "partial_transcript",
     "sessionId": "22222222-2222-4222-8222-222222222222",
     "text": "напомни купить",
     "isFinal": false
   },
   "final_transcript": {
-    "type": "final_transcript",
     "sessionId": "22222222-2222-4222-8222-222222222222",
     "text": "напомни купить молоко"
   },
   "overlay_update_listening": {
-    "type": "overlay_update",
     "seq": 1,
-    "state": {
-      "kind": "listening"
-    }
+    "state": { "kind": "listening" }
   },
   "overlay_update_capturing": {
-    "type": "overlay_update",
     "seq": 2,
-    "state": {
-      "kind": "capturing",
-      "caption": "напомни купить"
-    }
+    "state": { "kind": "capturing", "caption": "напомни купить" }
   },
   "overlay_update_thinking": {
-    "type": "overlay_update",
     "seq": 3,
-    "state": {
-      "kind": "thinking",
-      "caption": "напомни купить молоко"
-    }
+    "state": { "kind": "thinking", "caption": "напомни купить молоко" }
   },
   "overlay_update_processing": {
-    "type": "overlay_update",
     "seq": 4,
     "state": {
       "kind": "processing",
@@ -80,39 +59,22 @@
     }
   },
   "overlay_update_success": {
-    "type": "overlay_update",
     "seq": 5,
-    "state": {
-      "kind": "success",
-      "hint": "Готово",
-      "sound": "ack_success"
-    }
+    "state": { "kind": "success", "hint": "Готово", "sound": "ack_success" }
   },
   "overlay_update_error": {
-    "type": "overlay_update",
     "seq": 6,
-    "state": {
-      "kind": "error",
-      "hint": "Не понял запрос",
-      "sound": "ack_error"
-    }
+    "state": { "kind": "error", "hint": "Не понял запрос", "sound": "ack_error" }
   },
   "overlay_update_idle": {
-    "type": "overlay_update",
     "seq": 7,
-    "state": {
-      "kind": "idle"
-    }
+    "state": { "kind": "idle" }
   },
   "overlay_update_view": {
-    "type": "overlay_update",
     "seq": 8,
-    "state": {
-      "kind": "view"
-    }
+    "state": { "kind": "view" }
   },
   "list_view_update_open": {
-    "type": "list_view_update",
     "seq": 1,
     "view": {
       "title": "Список покупок",
@@ -124,31 +86,27 @@
     }
   },
   "list_view_update_empty": {
-    "type": "list_view_update",
     "seq": 2,
-    "view": {
-      "title": "Список покупок",
-      "items": [],
-      "open": true
-    }
+    "view": { "title": "Список покупок", "items": [], "open": true }
   },
   "list_view_update_close": {
-    "type": "list_view_update",
     "seq": 3,
-    "view": {
-      "items": [],
-      "open": false
-    }
+    "view": { "items": [], "open": false }
   },
   "core_session_end": {
-    "type": "session_end",
     "sessionId": "22222222-2222-4222-8222-222222222222",
     "reason": "endpoint"
   },
   "core_session_end_with_detail": {
-    "type": "session_end",
     "sessionId": "22222222-2222-4222-8222-222222222222",
     "reason": "stt_error",
     "detail": "Deepgram connection closed unexpectedly"
+  },
+  "session_mode_continuous": {
+    "sessionId": "22222222-2222-4222-8222-222222222222",
+    "mode": "continuous"
+  },
+  "arm_capture_continuous": {
+    "mode": "continuous"
   }
 }

@@ -141,25 +141,23 @@ function setupHarness(opts: {
   notesDir: string;
 }) {
   const sentToEar: any[] = [];
-  const send = vi.fn((raw: any) => {
-    const str = typeof raw === "string" ? raw : raw.toString();
-    try {
-      sentToEar.push(JSON.parse(str));
-    } catch {
-      sentToEar.push({ raw: str });
-    }
+  const emit = vi.fn((event: string, payload: unknown) => {
+    sentToEar.push({ type: event, ...(payload as object) });
   });
   const conn = {
-    socket: { send } as any,
+    socket: { emit } as any,
     deviceId: DEVICE_ID,
     deviceName: "stub",
     capabilities: [],
     activeSessionId: null,
-    activeSessionShortId: null,
   };
   const earRegistry = {
     list: () => [conn],
     setActiveSession: vi.fn(),
+    emitTo: vi.fn((_deviceId: string, event: string, payload: unknown) => {
+      emit(event, payload);
+      return true;
+    }),
   } as any;
 
   const env = {

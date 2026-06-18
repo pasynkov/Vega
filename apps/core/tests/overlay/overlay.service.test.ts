@@ -16,7 +16,7 @@ function makeService(): OverlayService {
 function bind(svc: OverlayService, deviceId = "dev-1") {
   const send = vi.fn();
   const terminate = vi.fn();
-  svc.bindDevice(deviceId, send, terminate);
+  svc.bindDevice(deviceId, send as any, terminate);
   return { send, terminate };
 }
 
@@ -27,8 +27,10 @@ describe("OverlayService", () => {
     expect(svc.set("dev-1", { kind: "listening" })).toBe(true);
     expect(svc.set("dev-1", { kind: "thinking", caption: "hi" })).toBe(true);
     expect(send).toHaveBeenCalledTimes(2);
-    expect(send.mock.calls[0][0]).toEqual({ type: "overlay_update", seq: 1, state: { kind: "listening" } });
-    expect(send.mock.calls[1][0]).toEqual({ type: "overlay_update", seq: 2, state: { kind: "thinking", caption: "hi" } });
+    expect(send.mock.calls[0][0]).toBe("overlay_update");
+    expect(send.mock.calls[0][1]).toEqual({ seq: 1, state: { kind: "listening" } });
+    expect(send.mock.calls[1][0]).toBe("overlay_update");
+    expect(send.mock.calls[1][1]).toEqual({ seq: 2, state: { kind: "thinking", caption: "hi" } });
   });
 
   it("no-ops when device is unknown", () => {
@@ -96,7 +98,7 @@ describe("OverlayService", () => {
     svc.unbindDevice("dev-1");
     const second = bind(svc);
     svc.set("dev-1", { kind: "listening" });
-    expect(second.send.mock.calls[0][0].seq).toBe(1);
+    expect(second.send.mock.calls[0][1].seq).toBe(1);
     // first sender should not get the second message
     expect(first.send).toHaveBeenCalledTimes(1);
   });

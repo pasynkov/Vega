@@ -112,12 +112,11 @@ export class EarSessionRouter {
       createdAt: now,
       expiresAt: now + RESERVATION_TTL_MS,
     });
-    const msg: ArmCaptureMessage = { type: "arm_capture", mode: opts.mode };
-    try {
-      conn.socket.send(JSON.stringify(msg));
-    } catch (err) {
+    const msg: ArmCaptureMessage = { mode: opts.mode };
+    const dispatched = this.registry.emitTo(conn.deviceId, "arm_capture", msg);
+    if (!dispatched) {
       this.reservations.delete(conn.deviceId);
-      this.logger.warn({ err, mode: opts.mode }, "arm: socket send failed");
+      this.logger.warn({ mode: opts.mode }, "arm: socket emit failed");
       return { ok: false, reason: "send-failed" };
     }
     // Bridge overlay between the closed short session and the upcoming

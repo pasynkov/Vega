@@ -9,7 +9,6 @@ import {
   SessionMode,
   SessionModeChangeMessage,
   SessionStartMessage,
-  sessionShortIdFromUuid,
 } from "@vega/ear-protocol";
 import { EarConnection, EarRegistry } from "../ear.registry";
 import { DeepgramClient, DeepgramSession } from "../../../integrations/deepgram/deepgram.client";
@@ -36,7 +35,6 @@ export interface OwnedSessionController {
 }
 
 interface InFlightSession extends SessionRecord {
-  shortId: bigint;
   deepgram: DeepgramSession | null;
   timeout: NodeJS.Timeout | null;
   silenceTimer: NodeJS.Timeout | null;
@@ -118,12 +116,8 @@ export class SessionService {
       session.silenceCapMs = CORE_SILENCE_CAP_MS;
       this.armSilenceTimer(session);
     }
-    const msg: SessionModeChangeMessage = {
-      type: "session_mode",
-      sessionId,
-      mode,
-    };
-    this.sendToEar(session, msg);
+    const msg: SessionModeChangeMessage = { sessionId, mode };
+    this.emitTo(session, "session_mode", msg);
     this.logger.info({ sessionId, mode }, "Session mode changed");
     return true;
   }
@@ -170,7 +164,6 @@ export class SessionService {
   }
 
   start(connection: EarConnection, message: SessionStartMessage): void {
-    const shortId = sessionShortIdFromUuid(message.sessionId);
     const startedAt = new Date().toISOString();
     const initialMode: SessionMode = message.mode ?? "regular";
     const initialCap = initialMode === "continuous" ? CONTINUOUS_MODE_SILENCE_CAP_MS : CORE_SILENCE_CAP_MS;
@@ -190,7 +183,6 @@ export class SessionService {
       finals: [],
       audioBuffers: [],
       sampleRate: message.sampleRate,
-      shortId,
       deepgram: null,
       // Wall-clock backstop for regular sessions only. Continuous mode
       // has no wall-clock cap — the silence cap (60 s, resets on every
@@ -266,22 +258,15 @@ export class SessionService {
     );
   }
 
-  forwardAudio(_connection: EarConnection, sessionShortId: bigint, payload: Uint8Array): void {
-    let target: InFlightSession | undefined;
-    for (const candidate of this.bySessionId.values()) {
-      if (candidate.shortId === sessionShortId) {
-        target = candidate;
-        break;
-      }
-    }
+  forwardAudio(_connection: EarConnection, sessionId: string, payload: Uint8Array): void {
+    const target = this.bySessionId.get(sessionId);
     if (!target) {
-      const sidStr = sessionShortId.toString();
-      if (this.lastUnknownShortIdLogged !== sidStr) {
+      if (this.lastUnknownShortIdLogged !== sessionId) {
         this.logger.debug(
-          { sessionShortId: sidStr },
-          "Audio frame for unknown session, dropping (further frames for same shortId silently dropped)",
+          { sessionId },
+          "Audio frame for unknown session, dropping (further frames for same sessionId silently dropped)",
         );
-        this.lastUnknownShortIdLogged = sidStr;
+        this.lastUnknownShortIdLogged = sessionId;
       }
       return;
     }
@@ -341,12 +326,11 @@ export class SessionService {
     session.partials.push(text);
     this.armSilenceTimer(session);
     const msg: PartialTranscriptMessage = {
-      type: "partial_transcript",
       sessionId: session.sessionId,
       text,
       isFinal: false,
     };
-    this.sendToEar(session, msg);
+    this.emitTo(session, "partial_transcript", msg);
     this.notifyTranscriptListeners(session.sessionId, "partial", text);
   }
 
@@ -496,23 +480,21 @@ export class SessionService {
     if (reason === "endpoint") {
       const finalText = session.finals.join(" ").trim() || session.partials.join(" ").trim();
       const finalMsg: FinalTranscriptMessage = {
-        type: "final_transcript",
         sessionId: session.sessionId,
         text: finalText,
       };
-      this.sendToEar(session, finalMsg);
+      this.emitTo(session, "final_transcript", finalMsg);
     }
 
     session.endedAt = new Date().toISOString();
     session.endReason = reason;
 
     const endMsg: CoreSessionEndMessage = {
-      type: "session_end",
       sessionId: session.sessionId,
       reason,
       ...(detail ? { detail } : {}),
     };
-    this.sendToEar(session, endMsg);
+    this.emitTo(session, "session_end", endMsg);
 
     const finalText = session.finals.join(" ").trim();
     // Deepgram sometimes never elevates a partial to final when the user
@@ -551,18 +533,11 @@ export class SessionService {
     }
   }
 
-  private sendToEar(session: InFlightSession, message: unknown): void {
-    const conn = this.findConnection(session.deviceId);
-    if (!conn) return;
-    try {
-      conn.socket.send(JSON.stringify(message));
-    } catch (err) {
-      this.logger.warn({ err }, "Failed to send to Ear");
+  private emitTo(session: InFlightSession, event: string, payload: unknown): void {
+    const ok = this.registry.emitTo(session.deviceId, event, payload);
+    if (!ok) {
+      this.logger.warn({ deviceId: session.deviceId, event }, "Failed to emit to Ear");
     }
-  }
-
-  private findConnection(deviceId: string): EarConnection | undefined {
-    return this.registry.list().find((c) => c.deviceId === deviceId);
   }
 }
 

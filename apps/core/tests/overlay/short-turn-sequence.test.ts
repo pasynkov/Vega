@@ -11,8 +11,9 @@ class StubLogger {
 }
 
 class StubRegistry {
-  list() { return [{ deviceId: "dev-1", socket: { send: () => {} } }]; }
+  list() { return [{ deviceId: "dev-1", socket: { emit: () => {} } }]; }
   setActiveSession() {}
+  emitTo() { return true; }
 }
 
 class StubDeepgramSession {
@@ -52,7 +53,7 @@ describe("Short-turn overlay sequence: wake → thinking on terminate → idle o
 
   it("regular turn: listening → no overlay on partial/final → thinking on terminate(endpoint), overlay survives session_end", async () => {
     const sentMessages: any[] = [];
-    overlay.bindDevice("dev-1", (msg) => sentMessages.push(msg), () => {});
+    overlay.bindDevice("dev-1", (event, payload) => sentMessages.push({ type: event, ...payload }), () => {});
 
     // Simulate wake_ack proceed.
     overlay.set("dev-1", { kind: "listening" });
@@ -87,7 +88,7 @@ describe("Short-turn overlay sequence: wake → thinking on terminate → idle o
 
   it("silentOverlay terminate path does not paint thinking (used by ttl/arm flows)", async () => {
     const sentMessages: any[] = [];
-    overlay.bindDevice("dev-1", (msg) => sentMessages.push(msg), () => {});
+    overlay.bindDevice("dev-1", (event, payload) => sentMessages.push({ type: event, ...payload }), () => {});
 
     svc.start(
       { deviceId: "dev-1", deviceName: "test", socket: { send: vi.fn() } as any } as any,
@@ -107,7 +108,7 @@ describe("Short-turn overlay sequence: wake → thinking on terminate → idle o
 
   it("continuous + owner: each final paints capturing with caption; regular session does NOT", async () => {
     const sentMessages: any[] = [];
-    overlay.bindDevice("dev-1", (msg) => sentMessages.push(msg), () => {});
+    overlay.bindDevice("dev-1", (event, payload) => sentMessages.push({ type: event, ...payload }), () => {});
 
     svc.start(
       { deviceId: "dev-1", deviceName: "test", socket: { send: vi.fn() } as any } as any,

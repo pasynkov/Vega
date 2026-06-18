@@ -48,7 +48,17 @@ final class SessionCoordinator {
 
     func start() throws {
         wake.onDetect = { [weak self] score in self?.handleWake(score: score) }
-        socket.onMessage = { [weak self] msg in self?.handleCoreMessage(msg) }
+        socket.handlers.onAck = { [weak self] m in self?.handleAck(m) }
+        socket.handlers.onWakeAck = { [weak self] m in self?.handleWakeAck(m) }
+        socket.handlers.onPartialTranscript = { [weak self] m in self?.handlePartial(m) }
+        socket.handlers.onFinalTranscript = { [weak self] m in self?.handleFinal(m) }
+        socket.handlers.onOverlayUpdate = { [weak self] m in self?.applyOverlayUpdate(m) }
+        socket.handlers.onListViewUpdate = { [weak self] m in self?.applyListViewUpdate(m) }
+        socket.handlers.onArmCapture = { [weak self] m in self?.handleArmCapture(mode: m.mode) }
+        socket.handlers.onSessionMode = { [weak self] m in
+            self?.serial.async { self?.applySessionMode(m) }
+        }
+        socket.handlers.onSessionEnd = { [weak self] m in self?.handleSessionEnd(m) }
         socket.onStatusChange = { [weak self] connected in
             self?.status.setState(connected ? .idle : .error("Core unreachable"))
         }
@@ -80,7 +90,7 @@ final class SessionCoordinator {
         serial.sync {
             if let sid = activeSessionId {
                 NSLog("[VegaEar] Ear ending session=\(sid) initiator=ear:quit reason=user bytesSent=\(bytesSentInSession)")
-                socket.sendJSON(EarSessionEndMessage(sessionId: sid, reason: .user))
+                socket.emit(EventName.earSessionEnd, EarSessionEndMessage(sessionId: sid, reason: .user))
             }
             activeSessionId = nil
             safetyTimer?.cancel()
@@ -97,7 +107,7 @@ final class SessionCoordinator {
             self.paused = paused
             if paused, let sid = self.activeSessionId {
                 NSLog("[VegaEar] Ear ending session=\(sid) initiator=ear:pause reason=user bytesSent=\(self.bytesSentInSession)")
-                self.socket.sendJSON(EarSessionEndMessage(sessionId: sid, reason: .user))
+                self.socket.emit(EventName.earSessionEnd, EarSessionEndMessage(sessionId: sid, reason: .user))
                 self.activeSessionId = nil
                 self.safetyTimer?.cancel()
                 self.safetyTimer = nil
@@ -152,7 +162,7 @@ final class SessionCoordinator {
                 score: Double(score),
                 timestamp: ISO8601DateFormatter().string(from: Date())
             )
-            self.socket.sendJSON(wakeMsg)
+            self.socket.emit(EventName.wakeDetected, wakeMsg)
 
             let startMsg = SessionStartMessage(
                 deviceId: self.deviceId,
@@ -162,7 +172,7 @@ final class SessionCoordinator {
                 codec: .linear16,
                 mode: .regular
             )
-            self.socket.sendJSON(startMsg)
+            self.socket.emit(EventName.sessionStart, startMsg)
 
             for buffered in self.audio.drainPreRoll() {
                 self.streamAudio(buffered)
@@ -205,7 +215,7 @@ final class SessionCoordinator {
                 codec: .linear16,
                 mode: mode
             )
-            self.socket.sendJSON(startMsg)
+            self.socket.emit(EventName.sessionStart, startMsg)
 
             for buffered in self.audio.drainPreRoll() {
                 self.streamAudio(buffered)
@@ -221,7 +231,7 @@ final class SessionCoordinator {
         guard let sid = activeSessionId else { return }
         do {
             for frame in try encoder.encode(pcm) {
-                socket.sendAudio(sessionId: sid, opusFrame: frame)
+                socket.emitAudio(sessionId: sid, pcm: frame)
                 bytesSentInSession += frame.count
             }
         } catch {
@@ -243,7 +253,7 @@ final class SessionCoordinator {
     private func endSessionLocally(sessionId: String, reason: EarEndReason) {
         guard activeSessionId == sessionId else { return }
         NSLog("[VegaEar] endSessionLocally session=\(sessionId) reason=\(reason.rawValue) bytesSent=\(bytesSentInSession)")
-        socket.sendJSON(EarSessionEndMessage(sessionId: sessionId, reason: reason))
+        socket.emit(EventName.earSessionEnd, EarSessionEndMessage(sessionId: sessionId, reason: reason))
         activeSessionId = nil
         silenceDetector = nil
         safetyTimer?.cancel()
@@ -286,7 +296,7 @@ final class SessionCoordinator {
             guard let self else { return }
             guard self.activeSessionId == sessionId else { return }
             NSLog("[VegaEar] Ear ending session=\(sessionId) initiator=ear:safety_timer reason=timeout bytesSent=\(self.bytesSentInSession) mode=\(self.sessionMode.rawValue) cap=\(capMs)")
-            self.socket.sendJSON(EarSessionEndMessage(sessionId: sessionId, reason: .timeout))
+            self.socket.emit(EventName.earSessionEnd, EarSessionEndMessage(sessionId: sessionId, reason: .timeout))
             self.activeSessionId = nil
             self.status.setState(.idle)
             self.onSessionStateChange?(false)
@@ -297,68 +307,61 @@ final class SessionCoordinator {
         safetyTimer = timer
     }
 
-    private func handleCoreMessage(_ message: CoreToEarMessage) {
-        switch message {
-        case .ack:
-            break
-        case .wakeAck(let m):
-            if m.action == .yield {
-                serial.async {
-                    if let sid = self.activeSessionId {
-                        self.socket.sendJSON(EarSessionEndMessage(sessionId: sid, reason: .user))
-                        self.activeSessionId = nil
-                        self.safetyTimer?.cancel()
-                        self.status.setState(.idle)
-                    }
-                }
-            }
-        case .overlayUpdate(let m):
-            applyOverlayUpdate(m)
-        case .listViewUpdate(let m):
-            DispatchQueue.main.async {
-                self.overlay.viewModel.applyListView(m)
-                if m.view.open {
-                    self.overlay.show()
-                }
-            }
-        case .sessionEnd(let m):
-            serial.async {
-                NSLog("[VegaEar] Core ended session=\(m.sessionId) reason=\(m.reason.rawValue) detail=\(m.detail ?? "-") bytesSent=\(self.bytesSentInSession)")
-                guard self.activeSessionId == m.sessionId else { return }
+    private func handleAck(_ message: AckMessage) {
+        NSLog("[VegaEar] register acked for deviceId=\(message.deviceId)")
+    }
+
+    private func handleWakeAck(_ message: WakeAckMessage) {
+        guard message.action == .yield else { return }
+        serial.async {
+            if let sid = self.activeSessionId {
+                self.socket.emit(EventName.earSessionEnd, EarSessionEndMessage(sessionId: sid, reason: .user))
                 self.activeSessionId = nil
                 self.safetyTimer?.cancel()
-                self.safetyTimer = nil
-                switch m.reason {
-                case .endpoint:
-                    self.status.setState(.idle)
-                case .timeout:
-                    self.status.setState(.idle)
-                case .sttError, .user:
-                    self.status.setState(.error(m.detail ?? "Session ended: \(m.reason.rawValue)"))
-                }
-                self.onSessionStateChange?(false)
-                // Intentionally NOT calling overlay.viewModel.hide() here.
-                // The overlay is decoupled from session lifecycle so the
-                // user keeps seeing "thinking" between session_end and
-                // the next overlay_update (arm_capture, success, error).
-                // The overlay disappears when Core emits {kind: idle} or
-                // on WS disconnect.
+                self.status.setState(.idle)
             }
-        case .partialTranscript(let m):
-            NSLog("[VegaEar] partial: \(m.text)")
-            serial.async { self.bumpSafetyOnTranscript(sessionId: m.sessionId) }
-        case .finalTranscript(let m):
-            NSLog("[VegaEar] final: \(m.text)")
-            serial.async { self.bumpSafetyOnTranscript(sessionId: m.sessionId) }
-        case .sessionMode(let m):
-            serial.async { self.applySessionMode(m) }
-        case .armCapture(let m):
-            handleArmCapture(mode: m.mode)
-        case .unknownOverlay(let seq, let raw):
-            NSLog("[VegaEar] Tolerating unknown overlay state seq=\(seq) kind=\(raw.rawKind)")
-            DispatchQueue.main.async { self.overlay.viewModel.applyUnknown(seq: seq, raw: raw) }
-        case .unknownSessionMode(let raw):
-            NSLog("[VegaEar] Ignoring unknown session_mode value from Core: \(raw)")
+        }
+    }
+
+    private func handlePartial(_ message: PartialTranscriptMessage) {
+        NSLog("[VegaEar] partial: \(message.text)")
+        serial.async { self.bumpSafetyOnTranscript(sessionId: message.sessionId) }
+    }
+
+    private func handleFinal(_ message: FinalTranscriptMessage) {
+        NSLog("[VegaEar] final: \(message.text)")
+        serial.async { self.bumpSafetyOnTranscript(sessionId: message.sessionId) }
+    }
+
+    private func handleSessionEnd(_ message: CoreSessionEndMessage) {
+        serial.async {
+            NSLog("[VegaEar] Core ended session=\(message.sessionId) reason=\(message.reason.rawValue) detail=\(message.detail ?? "-") bytesSent=\(self.bytesSentInSession)")
+            guard self.activeSessionId == message.sessionId else { return }
+            self.activeSessionId = nil
+            self.safetyTimer?.cancel()
+            self.safetyTimer = nil
+            switch message.reason {
+            case .endpoint:
+                self.status.setState(.idle)
+            case .timeout:
+                self.status.setState(.idle)
+            case .sttError, .user:
+                self.status.setState(.error(message.detail ?? "Session ended: \(message.reason.rawValue)"))
+            }
+            self.onSessionStateChange?(false)
+            // Intentionally NOT calling overlay.viewModel.hide() here.
+            // The overlay is decoupled from session lifecycle so the
+            // user keeps seeing "thinking" between session_end and
+            // the next overlay_update.
+        }
+    }
+
+    private func applyListViewUpdate(_ message: ListViewUpdateMessage) {
+        DispatchQueue.main.async {
+            self.overlay.viewModel.applyListView(message)
+            if message.view.open {
+                self.overlay.show()
+            }
         }
     }
 

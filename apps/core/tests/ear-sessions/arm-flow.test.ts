@@ -27,7 +27,11 @@ function makeRouter(opts: {
 } = {}) {
   const send = opts.send ?? vi.fn();
   const registry = {
-    list: () => [{ deviceId: "dev-1", socket: { send } as any }],
+    list: () => [{ deviceId: "dev-1", socket: { emit: send } as any }],
+    emitTo: (deviceId: string, event: string, payload: unknown) => {
+      send(JSON.stringify({ type: event, ...(payload as object) }));
+      return true;
+    },
   } as any;
   const sessions = {
     getActiveSessionIdForDevice: vi.fn(

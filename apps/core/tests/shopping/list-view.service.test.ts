@@ -19,8 +19,8 @@ function makeServices(): { listView: ListViewService; overlay: OverlayService } 
 function bindBoth(listView: ListViewService, overlay: OverlayService, deviceId = "dev-1") {
   const listSends: any[] = [];
   const overlaySends: any[] = [];
-  listView.bindDevice(deviceId, (m) => listSends.push(m));
-  overlay.bindDevice(deviceId, (m) => overlaySends.push(m), () => {});
+  listView.bindDevice(deviceId, (_event, payload) => listSends.push(payload));
+  overlay.bindDevice(deviceId, (_event, payload) => overlaySends.push(payload), () => {});
   return { listSends, overlaySends };
 }
 

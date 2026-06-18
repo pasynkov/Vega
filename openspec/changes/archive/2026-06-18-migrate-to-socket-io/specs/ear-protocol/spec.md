@@ -1,10 +1,4 @@
-# ear-protocol Specification
-
-## Purpose
-
-Defines the socket.io event catalog and payload schemas between any Vega Ear client (Mac menu-bar app, future Pi/iOS edges) and Vega Core. The schema lives in a single source-of-truth package consumed by both sides so wire compatibility is enforced at build time rather than discovered at runtime.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Shared WebSocket message schema
 
@@ -70,58 +64,22 @@ Every `overlay_update` SHALL carry a complete state record; there is no patch fo
 
 The Swift decoder SHALL tolerate unknown `state.kind`, `state.sound`, `arm_capture.mode`, and `session_mode.mode` values by surfacing them as `.unknown*` rather than disconnecting.
 
-#### Scenario: `wake_ack` accepts the reserved `yield` action
-
-- **WHEN** the validator is given `{ "type": "wake_ack", "action": "yield" }`
-- **THEN** validation SHALL succeed
-- **AND** Core MVP code SHALL never emit `yield`
-
 #### Scenario: `overlay_update` accepts every kind including `view`
 
 - **WHEN** the validator is given an `overlay_update` whose `state.kind` is any of `idle`, `listening`, `capturing`, `thinking`, `processing`, `success`, `error`, `view`
 - **THEN** validation SHALL succeed
 
-#### Scenario: `overlay_update.state.sound` rejects `wake`
-
-- **WHEN** the validator is given an `overlay_update` with `state.sound: "wake"`
-- **THEN** validation SHALL fail; `wake` is a local-Ear cue and never flows over the wire in `overlay_update`
-
 #### Scenario: `list_view_update` accepts an open snapshot with items
 
-- **WHEN** the validator is given `{ "type": "list_view_update", "seq": 1, "view": { "title": "Список покупок", "items": [{ "id": "a", "label": "молоко 1 л", "done": false }, { "id": "b", "label": "яйца", "done": true }], "open": true } }`
-- **THEN** validation SHALL succeed
-
-#### Scenario: `list_view_update` accepts a close message
-
-- **WHEN** the validator is given `{ "type": "list_view_update", "seq": 4, "view": { "items": [], "open": false } }`
+- **WHEN** the validator is given an event payload `{ "seq": 1, "view": { "title": "Список покупок", "items": [{ "id": "a", "label": "молоко 1 л", "done": false }], "open": true } }`
 - **THEN** validation SHALL succeed
 
 #### Scenario: `arm_capture` opens a fresh session
 
-- **WHEN** the Ear receives `{ "type": "arm_capture", "mode": "continuous" }`
+- **WHEN** the Ear receives an `arm_capture` event with payload `{ "mode": "continuous" }`
 - **THEN** the Ear SHALL open a new capture session under `continuous` mode without waiting for a wake-word
 - **AND** the Ear SHALL play the `ack_continue` cue
-- **AND** the Ear SHALL send `session_start` carrying `mode: "continuous"`
-
-### Requirement: Session lifecycle
-
-A capture session SHALL begin with a `session_start` message from the Ear and end with a `session_end` message sent by whichever side ends the session first. After the session-ending message both sides SHALL stop sending `audio_frame`, `partial_transcript`, and `final_transcript` for that `sessionId`.
-
-A `final_transcript` SHALL be sent by Core no later than its `session_end` of reason `endpoint` for the same `sessionId`.
-
-Only one session per Ear SHALL be active at a time in the MVP.
-
-#### Scenario: Audio frames after `session_end` are ignored
-
-- **WHEN** Core has sent `session_end` for a `sessionId` and the Ear sends an additional `audio_frame` for the same `sessionId`
-- **THEN** Core SHALL drop the frame and SHALL log the event at debug level
-- **AND** Core SHALL NOT reopen the Deepgram connection for that `sessionId`
-
-#### Scenario: Wake during an active session
-
-- **WHEN** the Ear emits `wake_detected` while it has an active session
-- **THEN** the Ear SHALL NOT emit a new `session_start`
-- **AND** Core SHALL respond with `wake_ack` of action `yield`
+- **AND** the Ear SHALL emit `session_start` with `mode: "continuous"`
 
 ### Requirement: Wire encoding
 
@@ -132,3 +90,11 @@ All control events SHALL travel as socket.io events over a WebSocket transport (
 - **WHEN** Core receives an `audio_frame` event with `sessionId = X` and a binary attachment of `N` bytes
 - **THEN** Core SHALL forward the `N`-byte buffer to the Deepgram session bound to `sessionId = X`
 - **AND** SHALL drop the buffer if no active session matches
+
+## REMOVED Requirements
+
+### Requirement: Raw WebSocket framing (`binary-frame.ts` + 8-byte sessionShortId header)
+
+**Reason**: Replaced by socket.io's transport. socket.io's binary attachments carry the audio buffer; the `sessionId` arrives as the first text arg of the `audio_frame` event. There is no longer a need for a 64-bit `sessionShortIdFromUuid` shortcut or the 8-byte little-endian header.
+
+**Migration**: Delete `packages/ear-protocol/src/binary-frame.ts` and all references to `encodeAudioFrame`, `decodeAudioFrame`, `sessionShortIdFromUuid` on both sides. Replace audio dispatch with `socket.emit("audio_frame", sessionId, buffer)` on the Ear and a `@SubscribeMessage("audio_frame")` handler whose signature is `(sessionId: string, buffer: Buffer)` on Core. Swift mirror: drop `AudioFrame.encode/decode/headerSize/sessionShortId`.

@@ -11,14 +11,16 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../../packages/ear-protocol/swift"),
-        .package(url: "https://github.com/microsoft/onnxruntime-swift-package-manager", exact: "1.20.0")
+        .package(url: "https://github.com/microsoft/onnxruntime-swift-package-manager", exact: "1.20.0"),
+        .package(url: "https://github.com/socketio/socket.io-client-swift", from: "16.1.1")
     ],
     targets: [
         .executableTarget(
             name: "VegaEar",
             dependencies: [
                 .product(name: "EarProtocol", package: "swift"),
-                .product(name: "onnxruntime", package: "onnxruntime-swift-package-manager")
+                .product(name: "onnxruntime", package: "onnxruntime-swift-package-manager"),
+                .product(name: "SocketIO", package: "socket.io-client-swift")
             ],
             path: "Sources/VegaEar",
             resources: [

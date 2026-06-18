@@ -1,4 +1,4 @@
-import { Module, OnApplicationBootstrap, OnApplicationShutdown } from "@nestjs/common";
+import { Module, OnApplicationShutdown } from "@nestjs/common";
 import { EarGateway } from "./ear.gateway";
 import { EarRegistry } from "./ear.registry";
 import { WakeCoordinator } from "./wake/wake-coordinator";
@@ -19,18 +19,10 @@ import { OverlayModule } from "../overlay/overlay.module";
   ],
   exports: [SessionService, EarRegistry, OverlayModule],
 })
-export class EarModule implements OnApplicationBootstrap, OnApplicationShutdown {
-  constructor(
-    private readonly gateway: EarGateway,
-    private readonly sessions: SessionService,
-  ) {}
-
-  async onApplicationBootstrap(): Promise<void> {
-    await this.gateway.start();
-  }
+export class EarModule implements OnApplicationShutdown {
+  constructor(private readonly sessions: SessionService) {}
 
   async onApplicationShutdown(): Promise<void> {
     await this.sessions.shutdownAll();
-    await this.gateway.stop();
   }
 }

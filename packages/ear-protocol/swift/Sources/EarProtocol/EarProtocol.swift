@@ -1,5 +1,27 @@
 import Foundation
 
+// MARK: - Event names (socket.io discriminator)
+
+public enum EventName {
+    // Ear → Core
+    public static let register = "register"
+    public static let wakeDetected = "wake_detected"
+    public static let sessionStart = "session_start"
+    public static let audioFrame = "audio_frame"
+    public static let earSessionEnd = "session_end"
+    // Core → Ear
+    public static let ack = "ack"
+    public static let wakeAck = "wake_ack"
+    public static let partialTranscript = "partial_transcript"
+    public static let finalTranscript = "final_transcript"
+    public static let overlayUpdate = "overlay_update"
+    public static let listViewUpdate = "list_view_update"
+    public static let sessionMode = "session_mode"
+    public static let armCapture = "arm_capture"
+    public static let coreSessionEnd = "session_end"
+    public static let exception = "exception"
+}
+
 // MARK: - Enums
 
 public enum Capability: String, Codable, CaseIterable, Sendable {
@@ -73,16 +95,14 @@ public enum Codec: String, Codable, Sendable {
     case opus
 }
 
-// MARK: - Ear -> Core messages
+// MARK: - Ear -> Core event payloads
 
 public struct RegisterMessage: Codable, Sendable, Equatable {
-    public let type: String
     public let deviceId: String
     public let deviceName: String
     public let capabilities: [Capability]
 
     public init(deviceId: String, deviceName: String, capabilities: [Capability]) {
-        self.type = "register"
         self.deviceId = deviceId
         self.deviceName = deviceName
         self.capabilities = capabilities
@@ -90,13 +110,11 @@ public struct RegisterMessage: Codable, Sendable, Equatable {
 }
 
 public struct WakeDetectedMessage: Codable, Sendable, Equatable {
-    public let type: String
     public let deviceId: String
     public let score: Double
     public let timestamp: String
 
     public init(deviceId: String, score: Double, timestamp: String) {
-        self.type = "wake_detected"
         self.deviceId = deviceId
         self.score = score
         self.timestamp = timestamp
@@ -104,7 +122,6 @@ public struct WakeDetectedMessage: Codable, Sendable, Equatable {
 }
 
 public struct SessionStartMessage: Codable, Sendable, Equatable {
-    public let type: String
     public let deviceId: String
     public let sessionId: String
     public let userId: String?
@@ -113,7 +130,6 @@ public struct SessionStartMessage: Codable, Sendable, Equatable {
     public let mode: SessionMode?
 
     public init(deviceId: String, sessionId: String, userId: String?, sampleRate: Int, codec: Codec, mode: SessionMode? = nil) {
-        self.type = "session_start"
         self.deviceId = deviceId
         self.sessionId = sessionId
         self.userId = userId
@@ -122,17 +138,15 @@ public struct SessionStartMessage: Codable, Sendable, Equatable {
         self.mode = mode
     }
 
-    // Encode `userId` even when nil so the JSON shape matches the TypeScript schema.
     enum CodingKeys: String, CodingKey {
-        case type, deviceId, sessionId, userId, sampleRate, codec, mode
+        case deviceId, sessionId, userId, sampleRate, codec, mode
     }
 
+    // Encode `userId` even when nil so the JSON shape matches the TypeScript schema.
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(type, forKey: .type)
         try c.encode(deviceId, forKey: .deviceId)
         try c.encode(sessionId, forKey: .sessionId)
-        // Explicit null when nil
         if let userId {
             try c.encode(userId, forKey: .userId)
         } else {
@@ -145,47 +159,39 @@ public struct SessionStartMessage: Codable, Sendable, Equatable {
 }
 
 public struct EarSessionEndMessage: Codable, Sendable, Equatable {
-    public let type: String
     public let sessionId: String
     public let reason: EarEndReason
 
     public init(sessionId: String, reason: EarEndReason) {
-        self.type = "session_end"
         self.sessionId = sessionId
         self.reason = reason
     }
 }
 
-// MARK: - Core -> Ear messages
+// MARK: - Core -> Ear event payloads
 
 public struct AckMessage: Codable, Sendable, Equatable {
-    public let type: String
     public let deviceId: String
 
     public init(deviceId: String) {
-        self.type = "ack"
         self.deviceId = deviceId
     }
 }
 
 public struct WakeAckMessage: Codable, Sendable, Equatable {
-    public let type: String
     public let action: WakeAction
 
     public init(action: WakeAction) {
-        self.type = "wake_ack"
         self.action = action
     }
 }
 
 public struct PartialTranscriptMessage: Codable, Sendable, Equatable {
-    public let type: String
     public let sessionId: String
     public let text: String
     public let isFinal: Bool
 
     public init(sessionId: String, text: String) {
-        self.type = "partial_transcript"
         self.sessionId = sessionId
         self.text = text
         self.isFinal = false
@@ -193,12 +199,10 @@ public struct PartialTranscriptMessage: Codable, Sendable, Equatable {
 }
 
 public struct FinalTranscriptMessage: Codable, Sendable, Equatable {
-    public let type: String
     public let sessionId: String
     public let text: String
 
     public init(sessionId: String, text: String) {
-        self.type = "final_transcript"
         self.sessionId = sessionId
         self.text = text
     }
@@ -231,20 +235,25 @@ public struct OverlayState: Codable, Sendable, Equatable {
 }
 
 public struct OverlayUpdateMessage: Codable, Sendable, Equatable {
-    public let type: String
     public let seq: Int
     public let state: OverlayState
 
     public init(seq: Int, state: OverlayState) {
-        self.type = "overlay_update"
         self.seq = seq
         self.state = state
     }
 }
 
-// Generic list-view surface rendered below the orb. Domain-agnostic on
-// the Ear: the client renders `items` verbatim, `done` rows are struck-
-// through, `open == false` collapses the section.
+// Raw overlay state used by the tolerance branch when `kind` or `sound`
+// is unknown. Preserves whatever text decoded so the Ear can still
+// render text alongside a fallback visual.
+public struct RawOverlayState: Sendable, Equatable {
+    public let rawKind: String
+    public let hint: String?
+    public let caption: String?
+    public let rawSound: String?
+}
+
 public struct ListItem: Codable, Sendable, Equatable {
     public let id: String
     public let label: String
@@ -281,103 +290,48 @@ public struct ListView: Codable, Sendable, Equatable {
 }
 
 public struct ListViewUpdateMessage: Codable, Sendable, Equatable {
-    public let type: String
     public let seq: Int
     public let view: ListView
 
     public init(seq: Int, view: ListView) {
-        self.type = "list_view_update"
         self.seq = seq
         self.view = view
     }
 }
 
-// Raw overlay state used by the tolerance branch when `kind` or `sound`
-// is unknown. Preserves whatever text decoded so the Ear can still
-// render text alongside a fallback visual.
-public struct RawOverlayState: Sendable, Equatable {
-    public let rawKind: String
-    public let hint: String?
-    public let caption: String?
-    public let rawSound: String?
-}
-
 public struct ArmCaptureMessage: Codable, Sendable, Equatable {
-    public let type: String
     public let mode: SessionMode
 
     public init(mode: SessionMode) {
-        self.type = "arm_capture"
         self.mode = mode
     }
 }
 
 public struct SessionModeChangeMessage: Codable, Sendable, Equatable {
-    public let type: String
     public let sessionId: String
     public let mode: SessionMode
 
     public init(sessionId: String, mode: SessionMode) {
-        self.type = "session_mode"
         self.sessionId = sessionId
         self.mode = mode
     }
 }
 
 public struct CoreSessionEndMessage: Codable, Sendable, Equatable {
-    public let type: String
     public let sessionId: String
     public let reason: CoreEndReason
     public let detail: String?
 
     public init(sessionId: String, reason: CoreEndReason, detail: String? = nil) {
-        self.type = "session_end"
         self.sessionId = sessionId
         self.reason = reason
         self.detail = detail
     }
 }
 
-// MARK: - Discriminated unions
+// MARK: - Codec helpers
 
-public enum EarToCoreMessage: Sendable, Equatable {
-    case register(RegisterMessage)
-    case wakeDetected(WakeDetectedMessage)
-    case sessionStart(SessionStartMessage)
-    case sessionEnd(EarSessionEndMessage)
-
-    public func encode() throws -> Data {
-        let encoder = JSONEncoder()
-        switch self {
-        case .register(let m): return try encoder.encode(m)
-        case .wakeDetected(let m): return try encoder.encode(m)
-        case .sessionStart(let m): return try encoder.encode(m)
-        case .sessionEnd(let m): return try encoder.encode(m)
-        }
-    }
-}
-
-public enum CoreToEarMessage: Sendable, Equatable {
-    case ack(AckMessage)
-    case wakeAck(WakeAckMessage)
-    case partialTranscript(PartialTranscriptMessage)
-    case finalTranscript(FinalTranscriptMessage)
-    case overlayUpdate(OverlayUpdateMessage)
-    case listViewUpdate(ListViewUpdateMessage)
-    case sessionMode(SessionModeChangeMessage)
-    case armCapture(ArmCaptureMessage)
-    case sessionEnd(CoreSessionEndMessage)
-    case unknownOverlay(seq: Int, raw: RawOverlayState)
-    case unknownSessionMode(rawMode: String)
-}
-
-// MARK: - Decoding helpers
-
-public enum EarProtocolError: Error {
-    case unknownMessageType(String)
-}
-
-public struct EarProtocol {
+public enum EarProtocol {
     public static let decoder: JSONDecoder = {
         let d = JSONDecoder()
         return d
@@ -385,130 +339,7 @@ public struct EarProtocol {
 
     public static let encoder: JSONEncoder = {
         let e = JSONEncoder()
-        // Preserve key order so round-trip tests are deterministic.
         e.outputFormatting = []
         return e
     }()
-
-    public static func decodeEarToCore(_ data: Data) throws -> EarToCoreMessage {
-        let envelope = try decoder.decode(MessageEnvelope.self, from: data)
-        switch envelope.type {
-        case "register":
-            return .register(try decoder.decode(RegisterMessage.self, from: data))
-        case "wake_detected":
-            return .wakeDetected(try decoder.decode(WakeDetectedMessage.self, from: data))
-        case "session_start":
-            return .sessionStart(try decoder.decode(SessionStartMessage.self, from: data))
-        case "session_end":
-            return .sessionEnd(try decoder.decode(EarSessionEndMessage.self, from: data))
-        default:
-            throw EarProtocolError.unknownMessageType(envelope.type)
-        }
-    }
-
-    public static func decodeCoreToEar(_ data: Data) throws -> CoreToEarMessage {
-        let envelope = try decoder.decode(MessageEnvelope.self, from: data)
-        switch envelope.type {
-        case "ack":
-            return .ack(try decoder.decode(AckMessage.self, from: data))
-        case "wake_ack":
-            return .wakeAck(try decoder.decode(WakeAckMessage.self, from: data))
-        case "partial_transcript":
-            return .partialTranscript(try decoder.decode(PartialTranscriptMessage.self, from: data))
-        case "final_transcript":
-            return .finalTranscript(try decoder.decode(FinalTranscriptMessage.self, from: data))
-        case "overlay_update":
-            // Tolerate unknown overlay kind/sound values so a newer Core
-            // does not break the WS. Keep whatever text decoded.
-            do {
-                return .overlayUpdate(try decoder.decode(OverlayUpdateMessage.self, from: data))
-            } catch {
-                struct RawOverlayEnvelope: Decodable {
-                    let seq: Int
-                    let state: RawState
-                    struct RawState: Decodable {
-                        let kind: String
-                        let hint: String?
-                        let caption: String?
-                        let sound: String?
-                    }
-                }
-                if let raw = try? decoder.decode(RawOverlayEnvelope.self, from: data) {
-                    return .unknownOverlay(
-                        seq: raw.seq,
-                        raw: RawOverlayState(
-                            rawKind: raw.state.kind,
-                            hint: raw.state.hint,
-                            caption: raw.state.caption,
-                            rawSound: raw.state.sound
-                        )
-                    )
-                }
-                throw error
-            }
-        case "session_mode":
-            do {
-                return .sessionMode(try decoder.decode(SessionModeChangeMessage.self, from: data))
-            } catch {
-                struct RawMode: Decodable { let mode: String }
-                if let raw = try? decoder.decode(RawMode.self, from: data) {
-                    return .unknownSessionMode(rawMode: raw.mode)
-                }
-                throw error
-            }
-        case "list_view_update":
-            return .listViewUpdate(try decoder.decode(ListViewUpdateMessage.self, from: data))
-        case "arm_capture":
-            return .armCapture(try decoder.decode(ArmCaptureMessage.self, from: data))
-        case "session_end":
-            return .sessionEnd(try decoder.decode(CoreSessionEndMessage.self, from: data))
-        default:
-            throw EarProtocolError.unknownMessageType(envelope.type)
-        }
-    }
-
-    private struct MessageEnvelope: Decodable {
-        let type: String
-    }
-}
-
-// MARK: - Binary `audio_frame` encoding
-
-public enum AudioFrame {
-    public static let headerSize: Int = 8
-
-    public static func sessionShortId(fromUuid uuid: String) -> UInt64 {
-        let hex = uuid.replacingOccurrences(of: "-", with: "")
-        precondition(hex.count == 32, "invalid UUID: \(uuid)")
-        var result: UInt64 = 0
-        for i in stride(from: 7, through: 0, by: -1) {
-            let start = hex.index(hex.startIndex, offsetBy: i * 2)
-            let end = hex.index(start, offsetBy: 2)
-            let byte = UInt64(hex[start..<end], radix: 16) ?? 0
-            result = (result << 8) | byte
-        }
-        return result
-    }
-
-    public static func encode(sessionId: String, payload: Data) -> Data {
-        var out = Data(count: headerSize + payload.count)
-        var shortId = sessionShortId(fromUuid: sessionId).littleEndian
-        withUnsafeBytes(of: &shortId) { src in
-            out.replaceSubrange(0..<headerSize, with: src)
-        }
-        out.replaceSubrange(headerSize..<out.count, with: payload)
-        return out
-    }
-
-    public static func decode(_ data: Data) throws -> (sessionShortId: UInt64, payload: Data) {
-        guard data.count >= headerSize else {
-            throw EarProtocolError.unknownMessageType("audio_frame too short")
-        }
-        let headerBytes = data.prefix(headerSize)
-        let shortId = headerBytes.withUnsafeBytes { raw -> UInt64 in
-            raw.load(as: UInt64.self).littleEndian
-        }
-        let payload = data.suffix(from: headerSize)
-        return (shortId, Data(payload))
-    }
 }

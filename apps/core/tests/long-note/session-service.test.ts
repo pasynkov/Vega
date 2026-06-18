@@ -10,8 +10,9 @@ class StubLogger {
 }
 
 class StubRegistry {
-  list() { return [{ deviceId: "dev-1", socket: { send: vi.fn() } }]; }
+  list() { return [{ deviceId: "dev-1", socket: { emit: vi.fn() } }]; }
   setActiveSession() {}
+  emitTo = vi.fn(() => true);
 }
 
 class StubDeepgramSession {

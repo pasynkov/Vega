@@ -3,6 +3,7 @@ import { NestFactory } from "@nestjs/core";
 import { Logger } from "nestjs-pino";
 import { AppModule } from "./app.module";
 import { EnvConfig } from "./config/env";
+import { EarIoAdapter } from "./conversation/ear/ear.io-adapter";
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
@@ -12,10 +13,10 @@ async function bootstrap(): Promise<void> {
   // onApplicationShutdown twice. The manual handler calls app.close() which
   // already fires the lifecycle hooks.
 
+  // socket.io adapter — sets server-level options + per-socket ulid id.
+  app.useWebSocketAdapter(new EarIoAdapter(app));
+
   const env = app.get(EnvConfig);
-  // The WS gateway binds itself on its own port via the ws library; we keep
-  // the Nest HTTP listener bound to a closed port purely so the module
-  // initialization completes.
   await app.init();
 
   const logger = app.get(Logger);

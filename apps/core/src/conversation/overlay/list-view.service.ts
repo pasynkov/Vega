@@ -9,7 +9,7 @@ import { OverlayService } from "./overlay.service";
 
 const AUTO_CLOSE_MS = 60_000;
 
-type Sender = (message: ListViewUpdateMessage) => void;
+type Sender = (event: string, payload: ListViewUpdateMessage) => void;
 
 interface DeviceBinding {
   send: Sender;
@@ -74,12 +74,11 @@ export class ListViewService {
     binding.open = true;
     binding.snapshot = validated.data;
     const message: ListViewUpdateMessage = {
-      type: "list_view_update",
       seq: binding.seq,
       view: validated.data,
     };
     try {
-      binding.send(message);
+      binding.send("list_view_update", message);
     } catch (err) {
       this.logger.warn({ err, deviceId, origin }, "listView.refresh: sender threw");
       return false;
@@ -126,12 +125,11 @@ export class ListViewService {
     binding.open = false;
     binding.snapshot = null;
     const message: ListViewUpdateMessage = {
-      type: "list_view_update",
       seq: binding.seq,
       view: { items: [], open: false },
     };
     try {
-      binding.send(message);
+      binding.send("list_view_update", message);
     } catch (err) {
       this.logger.warn({ err, deviceId }, "listView.close: sender threw");
       return false;

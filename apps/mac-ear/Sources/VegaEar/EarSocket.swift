@@ -1,146 +1,160 @@
 import Foundation
 import EarProtocol
+import SocketIO
+
+// Per-event handlers — replaces the prior single discriminated-union
+// dispatch. Each Core → Ear event has its own callback; SessionCoordinator
+// supplies the implementations.
+struct EarSocketHandlers {
+    var onAck: (AckMessage) -> Void = { _ in }
+    var onWakeAck: (WakeAckMessage) -> Void = { _ in }
+    var onPartialTranscript: (PartialTranscriptMessage) -> Void = { _ in }
+    var onFinalTranscript: (FinalTranscriptMessage) -> Void = { _ in }
+    var onOverlayUpdate: (OverlayUpdateMessage) -> Void = { _ in }
+    var onListViewUpdate: (ListViewUpdateMessage) -> Void = { _ in }
+    var onArmCapture: (ArmCaptureMessage) -> Void = { _ in }
+    var onSessionMode: (SessionModeChangeMessage) -> Void = { _ in }
+    var onSessionEnd: (CoreSessionEndMessage) -> Void = { _ in }
+    var onException: (String) -> Void = { _ in }
+}
 
 final class EarSocket {
-    typealias MessageHandler = (CoreToEarMessage) -> Void
     typealias StatusHandler = (Bool) -> Void
 
     private let url: URL
     private let deviceId: String
     private let deviceName: String
-    private let session: URLSession
-    private var task: URLSessionWebSocketTask?
-
-    // Exponential backoff with jitter. Reset only after the connection is
-    // confirmed by Core's `ack` to the `register` message — otherwise an
-    // immediately-rejected handshake would loop tight at 1 s.
-    private var reconnectDelay: TimeInterval = 1
-    private let initialReconnectDelay: TimeInterval = 1
-    private let maxReconnectDelay: TimeInterval = 30
-    private var stopped = false
+    private let manager: SocketManager
+    private let socket: SocketIOClient
     private var registerAcked = false
-    private var attempt = 0
 
-    var onMessage: MessageHandler?
+    var handlers = EarSocketHandlers()
     var onStatusChange: StatusHandler?
 
     init(url: URL, deviceId: String, deviceName: String) {
         self.url = url
         self.deviceId = deviceId
         self.deviceName = deviceName
-        self.session = URLSession(configuration: .default)
+        self.manager = SocketManager(
+            socketURL: url,
+            config: [
+                .forceWebsockets(true),
+                .reconnects(true),
+                .reconnectAttempts(-1),
+                .reconnectWait(1),
+                .reconnectWaitMax(30),
+                .randomizationFactor(0.25),
+                .log(false),
+            ]
+        )
+        self.socket = manager.socket(forNamespace: "/ear")
+        configureLifecycleHandlers()
+        configureEventHandlers()
     }
 
     func connect() {
-        stopped = false
-        openTask()
+        manager.connect()
     }
 
     func disconnect() {
-        stopped = true
-        task?.cancel(with: .goingAway, reason: nil)
-        task = nil
+        manager.disconnect()
         onStatusChange?(false)
     }
 
-    func sendJSON<T: Encodable>(_ message: T) {
-        guard let task else { return }
+    func emit<T: Encodable>(_ event: String, _ payload: T) {
         do {
-            let data = try EarProtocol.encoder.encode(message)
-            guard let text = String(data: data, encoding: .utf8) else { return }
-            task.send(.string(text)) { error in
-                if let error {
-                    NSLog("[VegaEar] WS send error: \(error)")
-                }
-            }
+            let data = try EarProtocol.encoder.encode(payload)
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+            socket.emit(event, json)
         } catch {
-            NSLog("[VegaEar] WS encode error: \(error)")
+            NSLog("[VegaEar] socket emit encode error: \(error)")
         }
     }
 
-    func sendAudio(sessionId: String, opusFrame: Data) {
-        guard let task else { return }
-        let framed = AudioFrame.encode(sessionId: sessionId, payload: opusFrame)
-        task.send(.data(framed)) { error in
-            if let error {
-                NSLog("[VegaEar] WS binary send error: \(error)")
-            }
-        }
+    func emitAudio(sessionId: String, pcm: Data) {
+        // socket.io-client-swift accepts `Data` as a binary attachment.
+        socket.emit("audio_frame", sessionId, pcm)
     }
 
-    private func openTask() {
-        attempt += 1
-        registerAcked = false
-        NSLog("[VegaEar] WS connect attempt #\(attempt) to \(url)")
-
-        let task = session.webSocketTask(with: url)
-        self.task = task
-        task.resume()
-        onStatusChange?(true)
-
-        let register = RegisterMessage(
-            deviceId: deviceId,
-            deviceName: deviceName,
-            capabilities: [.mic, .wake, .speaker]
-        )
-        sendJSON(register)
-
-        listen(task)
-    }
-
-    private func listen(_ task: URLSessionWebSocketTask) {
-        task.receive { [weak self] result in
+    private func configureLifecycleHandlers() {
+        socket.on(clientEvent: .connect) { [weak self] _, _ in
             guard let self else { return }
-            switch result {
-            case .failure(let error):
-                NSLog("[VegaEar] WS receive failed: \(error.localizedDescription)")
-                self.onStatusChange?(false)
-                self.scheduleReconnect()
-            case .success(let message):
-                switch message {
-                case .data(let data):
-                    self.dispatch(data: data)
-                case .string(let str):
-                    if let data = str.data(using: .utf8) {
-                        self.dispatch(data: data)
-                    }
-                @unknown default:
-                    break
-                }
-                self.listen(task)
-            }
+            NSLog("[VegaEar] socket.io connected to \(self.url)")
+            self.onStatusChange?(true)
+            self.registerAcked = false
+            let register = RegisterMessage(
+                deviceId: self.deviceId,
+                deviceName: self.deviceName,
+                capabilities: [.mic, .wake, .speaker]
+            )
+            self.emit(EventName.register, register)
+        }
+        socket.on(clientEvent: .disconnect) { [weak self] _, _ in
+            NSLog("[VegaEar] socket.io disconnected")
+            self?.onStatusChange?(false)
+        }
+        socket.on(clientEvent: .reconnect) { _, _ in
+            NSLog("[VegaEar] socket.io reconnecting")
+        }
+        socket.on(clientEvent: .error) { _, data in
+            NSLog("[VegaEar] socket.io error: \(data)")
         }
     }
 
-    private func dispatch(data: Data) {
-        do {
-            let decoded = try EarProtocol.decodeCoreToEar(data)
-            // Mark connection healthy on the first `ack` to register so the
-            // backoff resets only after Core confirmed the handshake.
-            if case .ack = decoded, !registerAcked {
-                registerAcked = true
-                let attemptCount = attempt
-                reconnectDelay = initialReconnectDelay
-                NSLog("[VegaEar] WS healthy after attempt #\(attemptCount), backoff reset")
+    private func configureEventHandlers() {
+        bindCodable(EventName.ack, AckMessage.self) { [weak self] msg in
+            guard let self else { return }
+            if !self.registerAcked {
+                self.registerAcked = true
+                NSLog("[VegaEar] socket.io healthy — ack received")
             }
-            onMessage?(decoded)
-        } catch {
-            NSLog("[VegaEar] WS decode error: \(error) — payload=\(String(data: data, encoding: .utf8) ?? "?")")
+            self.handlers.onAck(msg)
+        }
+        bindCodable(EventName.wakeAck, WakeAckMessage.self) { [weak self] msg in
+            self?.handlers.onWakeAck(msg)
+        }
+        bindCodable(EventName.partialTranscript, PartialTranscriptMessage.self) { [weak self] msg in
+            self?.handlers.onPartialTranscript(msg)
+        }
+        bindCodable(EventName.finalTranscript, FinalTranscriptMessage.self) { [weak self] msg in
+            self?.handlers.onFinalTranscript(msg)
+        }
+        bindCodable(EventName.overlayUpdate, OverlayUpdateMessage.self) { [weak self] msg in
+            self?.handlers.onOverlayUpdate(msg)
+        }
+        bindCodable(EventName.listViewUpdate, ListViewUpdateMessage.self) { [weak self] msg in
+            self?.handlers.onListViewUpdate(msg)
+        }
+        bindCodable(EventName.armCapture, ArmCaptureMessage.self) { [weak self] msg in
+            self?.handlers.onArmCapture(msg)
+        }
+        bindCodable(EventName.sessionMode, SessionModeChangeMessage.self) { [weak self] msg in
+            self?.handlers.onSessionMode(msg)
+        }
+        bindCodable(EventName.coreSessionEnd, CoreSessionEndMessage.self) { [weak self] msg in
+            self?.handlers.onSessionEnd(msg)
+        }
+        socket.on(EventName.exception) { [weak self] data, _ in
+            let desc = (data.first as? [String: Any])?.description ?? "unknown"
+            NSLog("[VegaEar] gateway exception: \(desc)")
+            self?.handlers.onException(desc)
         }
     }
 
-    private func scheduleReconnect() {
-        guard !stopped else { return }
-        // Jitter ±25 % so multiple Ears (or a flapping Core) don't synchronise
-        // their retry storms.
-        let jitter = Double.random(in: 0.75...1.25)
-        let delay = reconnectDelay * jitter
-        let nextDelay = min(maxReconnectDelay, reconnectDelay * 2)
-        NSLog(String(format: "[VegaEar] WS reconnect in %.1fs (next backoff %.1fs)", delay, nextDelay))
-        reconnectDelay = nextDelay
-        DispatchQueue.global().asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, !self.stopped else { return }
-            self.openTask()
+    private func bindCodable<T: Decodable>(
+        _ event: String,
+        _ type: T.Type,
+        handler: @escaping (T) -> Void
+    ) {
+        socket.on(event) { data, _ in
+            guard let first = data.first else { return }
+            do {
+                let raw = try JSONSerialization.data(withJSONObject: first)
+                let decoded = try EarProtocol.decoder.decode(T.self, from: raw)
+                handler(decoded)
+            } catch {
+                NSLog("[VegaEar] decode error for event \(event): \(error)")
+            }
         }
     }
 }
