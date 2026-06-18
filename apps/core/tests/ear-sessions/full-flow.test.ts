@@ -43,9 +43,9 @@ const mocks = vi.hoisted(() => {
               return { messages: [...state.messages, new AIMessage("")] };
             }
           } else if (
-            /begin_dictation|большую заметку|длинную заметку|long_note/i.test(text)
+            /open_continuous_session|большую заметку|длинную заметку|continuous/i.test(text)
           ) {
-            toolName = "begin_dictation";
+            toolName = "open_continuous_session";
             args = { intent: "long note" };
           } else if (/save_short_note|short note|купить молоко/i.test(text)) {
             toolName = "save_short_note";
@@ -206,7 +206,7 @@ function setupHarness(opts: {
   process.env.VEGA_NOTES_DIR = opts.notesDir;
   const storage = new NotesStorageService(new StubLogger() as any);
   const sessionSpecRef: { spec: AgentSpec | null } = { spec: null };
-  const router = new EarSessionRouter(new StubLogger() as any, earRegistry);
+  const router = new EarSessionRouter(new StubLogger() as any, earRegistry, sessions);
   const runner = new SessionAgentRunner(new StubLogger() as any, llm, env);
   const flushHooks = new FlushHookRegistry();
 
@@ -275,9 +275,9 @@ describe("End-to-end orchestrator → notes → arm_capture", () => {
     delete process.env.VEGA_NOTES_DIR;
   });
 
-  it("\"запиши большую заметку\" → supervisor routes to notes → begin_dictation → arm_capture sent", async () => {
+  it("\"запиши большую заметку\" → supervisor routes to notes → open_continuous_session → arm_capture sent", async () => {
     const { graphFactory, router, sentToEar } = setupHarness({
-      routeReply: { goto: "notes", task: "Открой новую long_note сессию для дикта large note" },
+      routeReply: { goto: "notes", task: "Открой новую continuous сессию для дикта large note" },
       notesDir: tmpDir,
     });
 
@@ -291,10 +291,10 @@ describe("End-to-end orchestrator → notes → arm_capture", () => {
 
     const armCapture = sentToEar.find((m) => m?.type === "arm_capture");
     expect(armCapture).toBeTruthy();
-    expect(armCapture.mode).toBe("long_note");
+    expect(armCapture.mode).toBe("continuous");
 
     // Once arm fires, router holds a reservation keyed by deviceId. The
-    // next session_start with mode=long_note binds the reservation to the
+    // next session_start with mode=continuous binds the reservation to the
     // notes-session spec.
     const ownership = router.bindOnSessionStart(
       {
@@ -304,7 +304,7 @@ describe("End-to-end orchestrator → notes → arm_capture", () => {
         userId: null,
         sampleRate: 16000,
         codec: "linear16",
-        mode: "long_note",
+        mode: "continuous",
       } as any,
       "11111111-1111-1111-1111-111111111111",
     );
@@ -333,9 +333,9 @@ describe("End-to-end orchestrator → notes → arm_capture", () => {
     expect(content).toMatch(/купить молоко/);
   });
 
-  it("after begin_dictation, simulated session_start binds ownership and finals route to the runner", async () => {
+  it("after open_continuous_session, simulated session_start binds ownership and finals route to the runner", async () => {
     const { graphFactory, router, sessions, conn } = setupHarness({
-      routeReply: { goto: "notes", task: "open long_note session for begin_dictation" },
+      routeReply: { goto: "notes", task: "open continuous session for open_continuous_session" },
       notesDir: tmpDir,
     });
 
@@ -345,7 +345,7 @@ describe("End-to-end orchestrator → notes → arm_capture", () => {
       { configurable: { thread_id: "thread-3" }, recursionLimit: 8 },
     );
 
-    // Now the Ear opens a new long_note session in response to arm_capture.
+    // Now the Ear opens a new continuous session in response to arm_capture.
     sessions.start(conn as any, {
       type: "session_start",
       deviceId: DEVICE_ID,
@@ -353,7 +353,7 @@ describe("End-to-end orchestrator → notes → arm_capture", () => {
       userId: null,
       sampleRate: 16000,
       codec: "linear16",
-      mode: "long_note",
+      mode: "continuous",
     } as any);
 
     expect(sessions.isOwnedSession(SESSION_ID)).toBe(true);

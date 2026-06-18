@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SessionService, LONG_NOTE_SILENCE_CAP_MS } from "../../src/conversation/ear/session/session.service";
+import { SessionService, CONTINUOUS_MODE_SILENCE_CAP_MS } from "../../src/conversation/ear/session/session.service";
 
 class StubLogger {
   info() {}
@@ -58,29 +58,29 @@ describe("SessionService long-note mode", () => {
     void svc.shutdownAll();
   });
 
-  it("setMode('long_note') raises silenceCapMs and suppresses VAD endpoint", () => {
+  it("setMode('continuous') raises silenceCapMs and suppresses VAD endpoint", () => {
     const sid = "22222222-2222-2222-2222-222222222222";
-    const ok = svc.setMode(sid, "long_note");
+    const ok = svc.setMode(sid, "continuous");
     expect(ok).toBe(true);
     // VAD endpoint suppression is exercised by forwardAudio path. We poke
     // an "endpoint" decision indirectly through internal state: the
     // session's vadEndpointSuppressed flag and silenceCapMs.
     const internal: any = (svc as any).bySessionId.get(sid);
     expect(internal.vadEndpointSuppressed).toBe(true);
-    expect(internal.silenceCapMs).toBe(LONG_NOTE_SILENCE_CAP_MS);
-    expect(internal.mode).toBe("long_note");
+    expect(internal.silenceCapMs).toBe(CONTINUOUS_MODE_SILENCE_CAP_MS);
+    expect(internal.mode).toBe("continuous");
   });
 
   it("setMode is idempotent on repeat", () => {
     const sid = "22222222-2222-2222-2222-222222222222";
-    expect(svc.setMode(sid, "long_note")).toBe(true);
-    expect(svc.setMode(sid, "long_note")).toBe(true);
+    expect(svc.setMode(sid, "continuous")).toBe(true);
+    expect(svc.setMode(sid, "continuous")).toBe(true);
     const internal: any = (svc as any).bySessionId.get(sid);
-    expect(internal.silenceCapMs).toBe(LONG_NOTE_SILENCE_CAP_MS);
+    expect(internal.silenceCapMs).toBe(CONTINUOUS_MODE_SILENCE_CAP_MS);
   });
 
   it("emitCue / setMode return false for unknown session", () => {
-    expect(svc.setMode("unknown-session", "long_note")).toBe(false);
+    expect(svc.setMode("unknown-session", "continuous")).toBe(false);
     expect(svc.emitCue("unknown-session", "ack_done")).toBe(false);
     expect(svc.setSilenceCap("unknown-session", 1234)).toBe(false);
   });

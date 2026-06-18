@@ -141,7 +141,7 @@ function setupHarness(opts: { capMs: number; notesDir: string }) {
     new StubStore() as any,
   );
 
-  const router = new EarSessionRouter(new StubLogger() as any, registry);
+  const router = new EarSessionRouter(new StubLogger() as any, registry, sessions);
   const llm = { getModel: () => ({} as any) } as any;
   const runner = new SessionAgentRunner(new StubLogger() as any, llm, env);
   const flushHooks = new FlushHookRegistry();
@@ -193,7 +193,7 @@ function setupHarness(opts: { capMs: number; notesDir: string }) {
 
 const SESSION_ID = "22222222-2222-2222-2222-222222222222";
 
-function startSession(sessions: SessionService, conn: any, mode: "regular" | "long_note" = "long_note") {
+function startSession(sessions: SessionService, conn: any, mode: "regular" | "continuous" = "continuous") {
   sessions.start(conn as any, {
     type: "session_start",
     deviceId: conn.deviceId,
@@ -228,11 +228,11 @@ describe("Tool-driven Ear session integration", () => {
         notesDir: tmpDir,
       });
 
-      const armRes = router.arm({ ownerSpec: sessionSpec, mode: "long_note" });
+      const armRes = router.arm({ ownerSpec: sessionSpec, mode: "continuous" });
       expect(armRes.ok).toBe(true);
       expect(sentToEar.find((f) => f.parsed?.type === "arm_capture")).toBeTruthy();
 
-      startSession(sessions, conn, "long_note");
+      startSession(sessions, conn, "continuous");
       expect(sessions.isOwnedSession(SESSION_ID)).toBe(true);
 
       const internal: any = (sessions as any).bySessionId.get(SESSION_ID);
@@ -275,8 +275,8 @@ describe("Tool-driven Ear session integration", () => {
         capMs: 200,
         notesDir: tmpDir,
       });
-      router.arm({ ownerSpec: sessionSpec, mode: "long_note" });
-      startSession(sessions, conn, "long_note");
+      router.arm({ ownerSpec: sessionSpec, mode: "continuous" });
+      startSession(sessions, conn, "continuous");
 
       const internal: any = (sessions as any).bySessionId.get(SESSION_ID);
       (sessions as any).onFinal(internal, "идея один", 0.9);

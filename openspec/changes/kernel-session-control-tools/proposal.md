@@ -8,6 +8,11 @@ This change extracts the tool into a kernel builder, and renames the protocol mo
 
 ## What Changes
 
+- **Bug-fix bundle** (observed live 2026-06-18): in addition to the kernel-builder extraction and the `long_note` → `continuous` rename, this change fixes four real bugs surfaced by the user's first end-to-end test of the post-refactor daemon:
+  1. **Wake-word leaks into the orchestrator as a user turn.** The very first STT final after wake (e.g. `"Этна."` for the `edna` candidate) is fired into `ConversationService.handleTurn` as if the user said it. Fix: filter the first final of any wake-driven session against a known wake-word vocabulary; suppressed finals SHALL NOT trigger a graph invocation.
+  2. **`arm_capture` is silently ignored when an Ear session is already active.** Notes domain calls `open_continuous_session` mid-turn; Core sends `arm_capture` while the original short session is still streaming audio; the Ear, per the existing spec, only opens a new session when none is active. Fix: before sending `arm_capture`, the kernel SHALL terminate the device's active short session (reason `endpoint`, initiator `core:tool_release`) so the Ear sees `session_end` → idle → `arm_capture` → new continuous session.
+  3. **`ConversationService.handleTurn` does not actually serialize concurrent turns per session.** The current "wait for prior" snippet races: when two callers arrive while one is in flight, both read the same `prior` promise, both await it, and both then run `runTurn` in parallel. Fix: replace the inFlight-read-then-set pattern with a proper per-session chain — every caller appends onto the latest promise; `runTurn` SHALL never run concurrently for the same `sessionId`.
+  4. **Finals that arrive after `arm_capture` dispatch but before the long session opens are routed as new orchestrator turns.** Once #2 is fixed and the active session is terminated cleanly, finals on the original session stop. The short window of finals that *did* arrive on the original session between `open_continuous_session` tool-call and original-session termination SHALL be dropped (logged as `dropped-in-transition`) instead of triggering further graph invocations.
 - **Add** `apps/core/src/conversation/kernel/tools/open-continuous-session.tool.ts` exporting `buildOpenContinuousSessionTool(router, ownerSpecRef)` that returns an `AgentTool` named `open_continuous_session`. Tool handler calls `router.arm({ ownerSpec, mode: "continuous" })` and returns the `ArmResult` verbatim.
 - **Update** `apps/core/src/domains/notes/notes.tools.ts` to drop the inline `begin_dictation` factory and instead push `buildOpenContinuousSessionTool(router, sessionSpecRef)` into the supervisor-side tool bundle. The notes-session sub-agent's `finalize_note` / `discard_note` tools are unchanged.
 - **Update** `apps/core/src/domains/notes/notes.agent.ts` system prompt and tool list to reference `open_continuous_session` (not `begin_dictation`).
@@ -32,10 +37,11 @@ This change extracts the tool into a kernel builder, and renames the protocol mo
 
 - `ear-protocol`: rename `SessionModeEnum` value `long_note` → `continuous`; all message schemas referencing the mode keep their shape with the new enum value.
 - `mac-ear`: the "Long-note mode handling" requirement renames its references to the mode value to `continuous`; the cue mapping, UI affordances, and `session_mode` handling are unchanged behaviorally.
-- `vega-core`: the "Long-note mode silence cap and termination" requirement keeps its semantics but references the mode value as `continuous` and renames the silence-cap constant accordingly.
-- `tool-driven-ear-sessions`: requirements that mention long_note ownership are reworded to "continuous-mode ownership"; tool semantics unchanged.
+- `vega-core`: the "Long-note mode silence cap and termination" requirement keeps its semantics but references the mode value as `continuous` and renames the silence-cap constant accordingly. A new requirement is added for **wake-word filtering at the orchestrator boundary** — the first STT final of every wake-driven session is checked against a wake-word vocabulary and dropped if it matches.
+- `tool-driven-ear-sessions`: requirements that mention long_note ownership are reworded to "continuous-mode ownership"; tool semantics unchanged. A new requirement formalizes that `EarSessionRouter.arm` SHALL terminate the device's active session before dispatching `arm_capture`, so the Ear receives the new arm in idle state.
 - `agent-system`: add a requirement that the kernel exposes session-control tool builders (the new `open_continuous_session` builder is the first one); domains MUST go through these builders rather than calling `EarSessionRouter.arm` directly.
 - `long-note-mode`: requirements re-worded around `continuous` mode; the protocol-level name change is the only behavioral surface that shifts.
+- `conversation`: a new requirement formalizes the per-session **serialization invariant** for `ConversationService.handleTurn` — concurrent calls for the same `sessionId` SHALL chain on a per-session promise so only one `runTurn` runs at a time, and SHALL preserve arrival order.
 
 ## Impact
 

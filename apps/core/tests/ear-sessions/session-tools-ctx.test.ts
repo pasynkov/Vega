@@ -13,7 +13,7 @@ function makeStubs() {
     hasInProgress: vi.fn(() => false),
   };
   const sessions = { emitCue: vi.fn() } as any;
-  const router = { arm: vi.fn(() => ({ ok: true, mode: "long_note" as const })) } as any;
+  const router = { arm: vi.fn(() => ({ ok: true, mode: "continuous" as const })) } as any;
   const sessionSpecRef: { spec: AgentSpec | null } = { spec: { name: "notes-session" } as AgentSpec };
   const { supervisorTools, sessionTools } = buildNotesTools(storage as any, sessions, router, sessionSpecRef);
   return { supervisorTools, sessionTools, storage };
@@ -55,9 +55,9 @@ describe("Session-bound notes tools require ear session ctx", () => {
     expect(storage.saveNote).toHaveBeenCalledWith("milk and bread");
   });
 
-  it("begin_dictation works without ear session ctx (it OPENS one)", async () => {
+  it("open_continuous_session works without ear session ctx (it OPENS one)", async () => {
     const { supervisorTools } = makeStubs();
-    const tool = findTool(supervisorTools, "begin_dictation");
+    const tool = findTool(supervisorTools, "open_continuous_session");
     const out = await invokeWithoutEarSession(tool, { intent: "long note" });
     expect(typeof out === "string").toBe(true);
   });

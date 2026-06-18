@@ -28,7 +28,7 @@ class StubLogger {
 const handle: EarSessionHandle = {
   sessionId: "sid-1",
   deviceId: "dev-1",
-  mode: "long_note",
+  mode: "continuous",
   arrivedAt: 0,
 };
 
