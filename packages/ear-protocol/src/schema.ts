@@ -25,7 +25,7 @@ export const CueEnum = z.enum([
 ]);
 export type Cue = z.infer<typeof CueEnum>;
 
-export const SessionModeEnum = z.enum(["regular", "long_note"]);
+export const SessionModeEnum = z.enum(["regular", "continuous"]);
 export type SessionMode = z.infer<typeof SessionModeEnum>;
 
 export const WakeActionEnum = z.enum(["proceed", "yield"]);

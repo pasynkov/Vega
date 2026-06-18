@@ -36,7 +36,7 @@ public enum Cue: String, Codable, Sendable {
 
 public enum SessionMode: String, Codable, Sendable {
     case regular
-    case longNote = "long_note"
+    case continuous
 }
 
 public enum WakeAction: String, Codable, Sendable {

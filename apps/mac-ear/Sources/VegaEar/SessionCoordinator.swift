@@ -11,7 +11,7 @@ final class SessionCoordinator {
     private let cues: CuePlayer
     private let status: StatusItemController
     private let regularSafetyCapMs: Int = 30_000
-    private let longNoteSafetyCapMs: Int = 60_000
+    private let continuousModeSafetyCapMs: Int = 60_000
 
     private let serial = DispatchQueue(label: "vega.ear.coordinator")
     private var activeSessionId: String?
@@ -183,12 +183,12 @@ final class SessionCoordinator {
             self.rmsLastReportAt = Date()
             self.silenceDetector = SilenceDetector()
             self.sessionMode = mode
-            self.silenceDetector?.setEndpointSuppressed(mode == .longNote)
+            self.silenceDetector?.setEndpointSuppressed(mode == .continuous)
             NSLog("[VegaEar] arm_capture: starting session=\(sessionId) mode=\(mode.rawValue)")
 
-            // Cue: long_note plays Submarine (ack_continue), regular plays wake.
+            // Cue: continuous plays Submarine (ack_continue), regular plays wake.
             switch mode {
-            case .longNote: self.cues.play(.ackContinue)
+            case .continuous: self.cues.play(.ackContinue)
             case .regular: self.cues.play(.wake)
             }
 
@@ -272,7 +272,7 @@ final class SessionCoordinator {
     }
 
     private func armSafetyTimer(for sessionId: String) {
-        let capMs = sessionMode == .longNote ? longNoteSafetyCapMs : regularSafetyCapMs
+        let capMs = sessionMode == .continuous ? continuousModeSafetyCapMs : regularSafetyCapMs
         safetyTimer?.cancel()
         let timer = DispatchSource.makeTimerSource(queue: serial)
         timer.schedule(deadline: .now() + .milliseconds(capMs))
@@ -360,15 +360,15 @@ final class SessionCoordinator {
         }
         sessionMode = msg.mode
         NSLog("[VegaEar] session_mode applied: \(msg.mode.rawValue)")
-        silenceDetector?.setEndpointSuppressed(msg.mode == .longNote)
+        silenceDetector?.setEndpointSuppressed(msg.mode == .continuous)
         armSafetyTimer(for: msg.sessionId)
-        if msg.mode == .longNote {
+        if msg.mode == .continuous {
             status.setState(.streaming)
         }
     }
 
     private func bumpSafetyOnTranscript(sessionId: String) {
-        guard activeSessionId == sessionId, sessionMode == .longNote else { return }
+        guard activeSessionId == sessionId, sessionMode == .continuous else { return }
         armSafetyTimer(for: sessionId)
     }
 
