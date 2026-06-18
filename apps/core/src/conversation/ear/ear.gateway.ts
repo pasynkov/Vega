@@ -13,6 +13,7 @@ import { EarRegistry, EarConnection } from "./ear.registry";
 import { WakeCoordinator } from "./wake/wake-coordinator";
 import { SessionService } from "./session/session.service";
 import { OverlayService } from "../overlay/overlay.service";
+import { ListViewService } from "../overlay/list-view.service";
 
 const REGISTER_TIMEOUT_MS = 2_000;
 
@@ -27,6 +28,7 @@ export class EarGateway {
     private readonly wake: WakeCoordinator,
     private readonly sessions: SessionService,
     private readonly overlay: OverlayService,
+    private readonly listView: ListViewService,
   ) {}
 
   async start(): Promise<void> {
@@ -104,6 +106,11 @@ export class EarGateway {
             connection = this.registry.register(socket, message);
             const ack: AckMessage = { type: "ack", deviceId: message.deviceId };
             this.sendJson(socket, ack);
+            this.listView.bindDevice(message.deviceId, (msg) => {
+              try { socket.send(JSON.stringify(msg)); } catch (err) {
+                this.logger.warn({ err, deviceId: message.deviceId }, "listView send failed");
+              }
+            });
             this.overlay.bindDevice(
               message.deviceId,
               (msg) => {
@@ -141,6 +148,12 @@ export class EarGateway {
             const action = this.wake.evaluate(connection, message);
             this.sendJson(socket, { type: "wake_ack", action });
             if (action === "proceed") {
+              // New command → collapse any open list view so the
+              // overlay shows only "listening". Pass silentOverlay so
+              // the close path doesn't flicker through idle before the
+              // listening paint below. If the user's new command is
+              // also list-related, show_list will reopen it.
+              this.listView.close(connection.deviceId, "wake", { silentOverlay: true });
               this.overlay.set(connection.deviceId, { kind: "listening" }, {}, "wake_ack_proceed");
             }
             this.logger.info(
@@ -174,6 +187,7 @@ export class EarGateway {
       clearTimeout(registerTimer);
       if (connection) {
         void this.sessions.handleDisconnect(connection);
+        this.listView.unbindDevice(connection.deviceId);
         this.overlay.unbindDevice(connection.deviceId);
         this.registry.unregister(connection.deviceId);
       }

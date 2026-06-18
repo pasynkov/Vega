@@ -9,6 +9,7 @@ import { AgentSystemModule } from "./conversation/kernel/agent-system.module";
 import { SupervisorModule } from "./conversation/kernel/supervisor/supervisor.module";
 import { MemoryModule } from "./tools/memory/memory.module";
 import { NotesModule } from "./domains/notes/notes.module";
+import { ShoppingModule } from "./domains/shopping/shopping.module";
 import { ConversationModule } from "./conversation/conversation.module";
 import { EarSessionsModule } from "./conversation/sessions/ear-sessions.module";
 
@@ -54,6 +55,7 @@ const prettyStream = pretty({
     EarSessionsModule,
     MemoryModule,
     NotesModule,
+    ShoppingModule,
   ],
 })
 export class AppModule {}

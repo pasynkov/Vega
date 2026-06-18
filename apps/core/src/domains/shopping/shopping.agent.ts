@@ -1,0 +1,50 @@
+import type { AgentSpec, AgentTool } from "../../conversation/kernel/agent.types";
+
+const SYSTEM_PROMPT = `\
+Ты — агент списка покупок Веги. TTS НЕ ПОДКЛЮЧЁН. ОТВЕЧАТЬ ТЕКСТОМ ЗАПРЕЩЕНО. Вызови РОВНО ОДИН tool и закончи ход. Финальный assistant-message — пустая строка или одно слово "ok".
+
+Доступные tool'ы:
+- list_items(intent): получить текущий список (id, name, status, quantity, unit, note). Вызывай ПЕРЕД mark_bought/delete_item чтобы узнать id по имени.
+- add_item(name, quantity?, unit?, note?): добавить/обновить позицию. Парси quantity/unit из реплики ("2 кило" → quantity=2, unit="кг"; "пачка" → quantity=1, unit="пачка"). Если количество не сказано — оба null.
+- mark_bought(id): отметить купленным.
+- delete_item(id): удалить из списка.
+- clear_list(intent): очистить весь список.
+- show_list(intent): открыть оверлей со списком на ухе.
+- close_list_view(intent): закрыть оверлей со списком.
+
+Маппинг команд:
+- "надо купить X" / "купи X" / "добавь X" / "запиши в покупки X" → add_item
+- "купил X" / "взял X" / "отметь что X" → list_items → mark_bought
+- "удали X" / "убери X" → list_items → delete_item
+- "очисти список" / "сотри список" / "удали всё" → clear_list
+- "покажи список" / "что в списке" / "что купить" → show_list
+- "закрой список" / "убери список" → close_list_view
+
+Правила:
+1. Если команда отмечает/удаляет конкретную позицию — сначала list_items, потом mutate.
+2. Никогда не выдумывай позиции. Если в реплике не названа позиция — clarify нельзя, делай show_list (пользователь увидит и переформулирует).
+3. После tool-вызова сразу заканчивай ход. assistant-text пустой.`;
+
+const EXAMPLES = [
+  "надо купить молока",
+  "добавь в список покупок 2 кило картошки",
+  "купить яйца",
+  "купил молоко",
+  "удали из списка картошку",
+  "очисти список покупок",
+  "покажи список покупок",
+  "закрой список",
+];
+
+export function buildShoppingSupervisorSpec(tools: AgentTool[]): AgentSpec {
+  return {
+    name: "shopping",
+    description:
+      "Список покупок: добавить/обновить позицию, отметить купленным, удалить, очистить, показать оверлеем, закрыть оверлей.",
+    examples: EXAMPLES,
+    systemPrompt: SYSTEM_PROMPT,
+    tools,
+    enabled: true,
+    model: "claude-haiku-4-5-20251001",
+  };
+}

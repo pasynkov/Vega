@@ -104,6 +104,42 @@
       "kind": "idle"
     }
   },
+  "overlay_update_view": {
+    "type": "overlay_update",
+    "seq": 8,
+    "state": {
+      "kind": "view"
+    }
+  },
+  "list_view_update_open": {
+    "type": "list_view_update",
+    "seq": 1,
+    "view": {
+      "title": "Список покупок",
+      "items": [
+        { "id": "a", "label": "молоко 1 л", "done": false },
+        { "id": "b", "label": "яйца", "done": true }
+      ],
+      "open": true
+    }
+  },
+  "list_view_update_empty": {
+    "type": "list_view_update",
+    "seq": 2,
+    "view": {
+      "title": "Список покупок",
+      "items": [],
+      "open": true
+    }
+  },
+  "list_view_update_close": {
+    "type": "list_view_update",
+    "seq": 3,
+    "view": {
+      "items": [],
+      "open": false
+    }
+  },
   "core_session_end": {
     "type": "session_end",
     "sessionId": "22222222-2222-4222-8222-222222222222",

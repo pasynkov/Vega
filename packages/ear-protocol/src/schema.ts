@@ -48,6 +48,7 @@ export const OverlayKindEnum = z.enum([
   "processing",
   "success",
   "error",
+  "view",
 ]);
 export type OverlayKind = z.infer<typeof OverlayKindEnum>;
 
@@ -159,6 +160,32 @@ export const OverlayUpdateMessageSchema = z.object({
 });
 export type OverlayUpdateMessage = z.infer<typeof OverlayUpdateMessageSchema>;
 
+// Generic list-view surface rendered below the orb. Drives a domain-
+// agnostic vertical list (shopping, todo, recipes, ...). The Ear renders
+// `items` verbatim; `done` rows are struck-through. `open: false`
+// collapses the section; the orb is unaffected (a separate
+// overlay_update controls the orb).
+export const ListItemSchema = z.object({
+  id: z.string().min(1).max(64),
+  label: z.string().min(1).max(240),
+  done: z.boolean(),
+});
+export type ListItem = z.infer<typeof ListItemSchema>;
+
+export const ListViewSchema = z.object({
+  title: z.string().max(120).optional(),
+  items: z.array(ListItemSchema).max(200),
+  open: z.boolean(),
+});
+export type ListView = z.infer<typeof ListViewSchema>;
+
+export const ListViewUpdateMessageSchema = z.object({
+  type: z.literal("list_view_update"),
+  seq: z.number().int().positive(),
+  view: ListViewSchema,
+});
+export type ListViewUpdateMessage = z.infer<typeof ListViewUpdateMessageSchema>;
+
 export const CoreSessionEndMessageSchema = z.object({
   type: z.literal("session_end"),
   sessionId: uuid,
@@ -190,6 +217,7 @@ export const CoreToEarMessageSchema = z.discriminatedUnion("type", [
   PartialTranscriptMessageSchema,
   FinalTranscriptMessageSchema,
   OverlayUpdateMessageSchema,
+  ListViewUpdateMessageSchema,
   SessionModeChangeMessageSchema,
   ArmCaptureMessageSchema,
   CoreSessionEndMessageSchema,

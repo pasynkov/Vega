@@ -53,6 +53,7 @@ final class RoundTripTests: XCTestCase {
         case .partialTranscript(let m): reencoded = try encoder.encode(m)
         case .finalTranscript(let m): reencoded = try encoder.encode(m)
         case .overlayUpdate(let m): reencoded = try encoder.encode(m)
+        case .listViewUpdate(let m): reencoded = try encoder.encode(m)
         case .armCapture(let m): reencoded = try encoder.encode(m)
         case .sessionMode(let m): reencoded = try encoder.encode(m)
         case .sessionEnd(let m): reencoded = try encoder.encode(m)
@@ -84,6 +85,10 @@ final class RoundTripTests: XCTestCase {
     func testOverlaySuccess() throws { try roundTripCoreToEar("overlay_update_success") }
     func testOverlayError() throws { try roundTripCoreToEar("overlay_update_error") }
     func testOverlayIdle() throws { try roundTripCoreToEar("overlay_update_idle") }
+    func testOverlayView() throws { try roundTripCoreToEar("overlay_update_view") }
+    func testListViewOpen() throws { try roundTripCoreToEar("list_view_update_open") }
+    func testListViewEmpty() throws { try roundTripCoreToEar("list_view_update_empty") }
+    func testListViewClose() throws { try roundTripCoreToEar("list_view_update_close") }
     func testCoreSessionEnd() throws { try roundTripCoreToEar("core_session_end") }
     func testCoreSessionEndWithDetail() throws { try roundTripCoreToEar("core_session_end_with_detail") }
 

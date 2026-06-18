@@ -55,6 +55,7 @@ public enum OverlayKind: String, Codable, Sendable {
     case processing
     case success
     case error
+    case view
 }
 
 public enum SessionMode: String, Codable, Sendable {
@@ -241,6 +242,56 @@ public struct OverlayUpdateMessage: Codable, Sendable, Equatable {
     }
 }
 
+// Generic list-view surface rendered below the orb. Domain-agnostic on
+// the Ear: the client renders `items` verbatim, `done` rows are struck-
+// through, `open == false` collapses the section.
+public struct ListItem: Codable, Sendable, Equatable {
+    public let id: String
+    public let label: String
+    public let done: Bool
+
+    public init(id: String, label: String, done: Bool) {
+        self.id = id
+        self.label = label
+        self.done = done
+    }
+}
+
+public struct ListView: Codable, Sendable, Equatable {
+    public let title: String?
+    public let items: [ListItem]
+    public let open: Bool
+
+    public init(title: String? = nil, items: [ListItem], open: Bool) {
+        self.title = title
+        self.items = items
+        self.open = open
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case title, items, open
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        if let title { try c.encode(title, forKey: .title) }
+        try c.encode(items, forKey: .items)
+        try c.encode(open, forKey: .open)
+    }
+}
+
+public struct ListViewUpdateMessage: Codable, Sendable, Equatable {
+    public let type: String
+    public let seq: Int
+    public let view: ListView
+
+    public init(seq: Int, view: ListView) {
+        self.type = "list_view_update"
+        self.seq = seq
+        self.view = view
+    }
+}
+
 // Raw overlay state used by the tolerance branch when `kind` or `sound`
 // is unknown. Preserves whatever text decoded so the Ear can still
 // render text alongside a fallback visual.
@@ -312,6 +363,7 @@ public enum CoreToEarMessage: Sendable, Equatable {
     case partialTranscript(PartialTranscriptMessage)
     case finalTranscript(FinalTranscriptMessage)
     case overlayUpdate(OverlayUpdateMessage)
+    case listViewUpdate(ListViewUpdateMessage)
     case sessionMode(SessionModeChangeMessage)
     case armCapture(ArmCaptureMessage)
     case sessionEnd(CoreSessionEndMessage)
@@ -404,6 +456,8 @@ public struct EarProtocol {
                 }
                 throw error
             }
+        case "list_view_update":
+            return .listViewUpdate(try decoder.decode(ListViewUpdateMessage.self, from: data))
         case "arm_capture":
             return .armCapture(try decoder.decode(ArmCaptureMessage.self, from: data))
         case "session_end":

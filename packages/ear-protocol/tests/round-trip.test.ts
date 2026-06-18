@@ -4,6 +4,8 @@ import { join } from "node:path";
 import {
   CoreToEarMessageSchema,
   EarToCoreMessageSchema,
+  ListViewSchema,
+  ListViewUpdateMessageSchema,
   OverlayStateSchema,
   OverlayUpdateMessageSchema,
   encodeAudioFrame,
@@ -28,6 +30,10 @@ const coreKeys = [
   "overlay_update_success",
   "overlay_update_error",
   "overlay_update_idle",
+  "overlay_update_view",
+  "list_view_update_open",
+  "list_view_update_empty",
+  "list_view_update_close",
   "core_session_end",
   "core_session_end_with_detail",
 ] as const;
@@ -69,8 +75,8 @@ describe("overlay_update bounds", () => {
     expect(result.success).toBe(false);
   });
 
-  it("accepts every overlay kind", () => {
-    const kinds = ["idle", "listening", "capturing", "thinking", "processing", "success", "error"];
+  it("accepts every overlay kind including view", () => {
+    const kinds = ["idle", "listening", "capturing", "thinking", "processing", "success", "error", "view"];
     for (const kind of kinds) {
       const result = OverlayStateSchema.safeParse({ kind });
       expect(result.success).toBe(true);
@@ -98,6 +104,40 @@ describe("overlay_update bounds", () => {
       type: "overlay_update",
       seq: 0,
       state: { kind: "idle" },
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("list_view_update", () => {
+  it("rejects negative seq", () => {
+    const result = ListViewUpdateMessageSchema.safeParse({
+      type: "list_view_update",
+      seq: 0,
+      view: { items: [], open: false },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects items array longer than 200", () => {
+    const items = Array.from({ length: 201 }, (_, i) => ({
+      id: `${i}`,
+      label: `item ${i}`,
+      done: false,
+    }));
+    const result = ListViewSchema.safeParse({ items, open: true });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts an empty open snapshot", () => {
+    const result = ListViewSchema.safeParse({ items: [], open: true });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects label longer than 240 chars", () => {
+    const result = ListViewSchema.safeParse({
+      items: [{ id: "a", label: "x".repeat(241), done: false }],
+      open: true,
     });
     expect(result.success).toBe(false);
   });

@@ -22,6 +22,9 @@ struct OverlayView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
             }
+            if vm.viewOpen {
+                ListSection(title: vm.viewTitle, items: vm.viewItems)
+            }
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 18)
@@ -34,6 +37,45 @@ struct OverlayView: View {
         // lag where the old icon kept showing while the sound had
         // already changed.
         .animation(.smooth(duration: 0.18), value: vm.visible)
+    }
+}
+
+private struct ListSection: View {
+    let title: String?
+    let items: [ListItem]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let title, !title.isEmpty {
+                Text(title)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 2)
+                Divider().opacity(0.4)
+            }
+            if items.isEmpty {
+                Text("(пусто)")
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+                    .padding(.vertical, 4)
+            } else {
+                ForEach(items, id: \.id) { item in
+                    HStack(spacing: 8) {
+                        Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(item.done ? .green : .secondary)
+                            .font(.system(size: 14))
+                        Text(item.label)
+                            .font(.callout)
+                            .strikethrough(item.done, color: .secondary)
+                            .foregroundStyle(item.done ? .secondary : .primary)
+                            .lineLimit(2)
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+        }
+        .padding(.top, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -94,6 +136,7 @@ struct Orb: View {
         case .processing: return [.pink.opacity(0.95), .purple.opacity(0.55)]
         case .success:    return [.green, .green.opacity(0.35)]
         case .error:      return [.red, .orange.opacity(0.35)]
+        case .view:       return [.indigo, .blue.opacity(0.35)]
         }
     }
 
@@ -106,6 +149,7 @@ struct Orb: View {
         case .success:    return .green
         case .error:      return .red
         case .idle:       return .gray
+        case .view:       return .indigo
         }
     }
 
@@ -133,6 +177,7 @@ struct Orb: View {
         case .processing: return "gearshape.fill"
         case .success:    return "checkmark"
         case .error:      return "exclamationmark"
+        case .view:       return "list.bullet"
         }
     }
 
@@ -143,6 +188,7 @@ struct Orb: View {
         case .thinking, .processing: return 0.6
         case .success, .error:       return 1.0
         case .idle:                  return 1.6
+        case .view:                  return 2.4   // very calm, "I'm presenting"
         }
     }
 

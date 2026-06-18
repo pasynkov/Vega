@@ -314,6 +314,13 @@ final class SessionCoordinator {
             }
         case .overlayUpdate(let m):
             applyOverlayUpdate(m)
+        case .listViewUpdate(let m):
+            DispatchQueue.main.async {
+                self.overlay.viewModel.applyListView(m)
+                if m.view.open {
+                    self.overlay.show()
+                }
+            }
         case .sessionEnd(let m):
             serial.async {
                 NSLog("[VegaEar] Core ended session=\(m.sessionId) reason=\(m.reason.rawValue) detail=\(m.detail ?? "-") bytesSent=\(self.bytesSentInSession)")
