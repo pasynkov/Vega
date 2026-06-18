@@ -20,7 +20,13 @@ export class DbService implements OnModuleInit, OnApplicationShutdown {
     this._dataSource = new DataSource({
       type: "better-sqlite3",
       database: this.env.vegaDbPath,
-      entities: [__dirname + "/../**/*.entity.{ts,js}"],
+      // After the refactor-backend-modules reorg this file lives at
+      // src/integrations/database/, so "../**/*.entity.{ts,js}" used to
+      // narrow the glob to src/integrations/** and miss every entity
+      // outside that subtree (the Memory entity under tools/memory/, the
+      // ConversationSessionRow entity under conversation/). Walk up two
+      // levels so the glob lands at src/**/*.entity.{ts,js} again.
+      entities: [__dirname + "/../../**/*.entity.{ts,js}"],
       synchronize: true,
       prepareDatabase: (db: Database.Database) => {
         db.pragma("journal_mode = WAL");
