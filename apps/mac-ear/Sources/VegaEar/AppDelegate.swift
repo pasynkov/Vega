@@ -9,11 +9,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var preferences: Preferences!
     private var audio: AudioEngine!
     private var openWakeWord: OpenWakeWordDetector?
+    private var overlayController: OverlayWindowController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         identity = DeviceIdentityService()
         preferences = Preferences()
         statusController = StatusItemController()
+        overlayController = OverlayWindowController()
+        overlayController.anchorFrameProvider = { [weak self] in self?.statusController.statusButtonScreenFrame }
         checkMicrophonePermission()
         statusController.onPauseToggle = { [weak self] paused in
             self?.coordinator.setPaused(paused)
@@ -72,7 +75,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 encoder: encoder,
                 socket: socket,
                 cues: cues,
-                statusController: statusController
+                statusController: statusController,
+                overlay: overlayController
             )
             coordinator.onSessionStateChange = { [weak self] active in
                 self?.statusController.setSessionActive(active)

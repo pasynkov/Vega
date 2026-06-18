@@ -4,6 +4,7 @@ import type { ArmCaptureMessage, SessionMode, SessionStartMessage } from "@vega/
 import { EarRegistry } from "../ear/ear.registry";
 import { SessionService } from "../ear/session/session.service";
 import type { AgentSpec } from "../kernel/agent.types";
+import { OverlayService } from "../overlay/overlay.service";
 import { EarSessionReservationConflictError } from "./ear-session.errors";
 
 const RESERVATION_TTL_MS = 10_000;
@@ -55,6 +56,7 @@ export class EarSessionRouter {
     @InjectPinoLogger(EarSessionRouter.name) private readonly logger: PinoLogger,
     private readonly registry: EarRegistry,
     private readonly sessions: SessionService,
+    private readonly overlay: OverlayService,
   ) {}
 
   arm(opts: ArmOptions): ArmResult {
@@ -78,8 +80,17 @@ export class EarSessionRouter {
     const activeSessionId = this.sessions.getActiveSessionIdForDevice(conn.deviceId);
     if (activeSessionId) {
       this.armTornDown.set(activeSessionId, Date.now() + ARM_TORNDOWN_TTL_MS);
+      // Pass silentOverlay so terminate does not paint thinking-with-Pop
+      // over the soon-to-arrive arm_capture flow; the next overlay update
+      // below is the canonical bridge state.
       void this.sessions
-        .terminateExternal(activeSessionId, "endpoint", "core:tool_release")
+        .terminateExternal(
+          activeSessionId,
+          "endpoint",
+          "core:tool_release",
+          undefined,
+          { silentOverlay: true },
+        )
         .catch((err) =>
           this.logger.warn(
             { err, sessionId: activeSessionId },
@@ -109,6 +120,18 @@ export class EarSessionRouter {
       this.logger.warn({ err, mode: opts.mode }, "arm: socket send failed");
       return { ok: false, reason: "send-failed" };
     }
+    // Bridge overlay between the closed short session and the upcoming
+    // session. For `continuous` mode the user is about to dictate a long
+    // payload — paint `capturing` so the orb icon (waveform) reads as
+    // "записываю длинно" rather than the wake-listening `mic`. For the
+    // (currently unused) regular arm path, fall back to `listening`.
+    const bridgeKind = opts.mode === "continuous" ? "capturing" : "listening";
+    this.overlay.set(
+      conn.deviceId,
+      { kind: bridgeKind },
+      {},
+      `arm_bridge:${opts.ownerSpec.name}:${opts.mode}`,
+    );
     this.logger.info(
       { deviceId: conn.deviceId, mode: opts.mode, owner: opts.ownerSpec.name },
       "Ear session reserved via arm_capture",

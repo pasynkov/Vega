@@ -12,6 +12,7 @@ import { EnvConfig } from "../../config/env";
 import { EarRegistry, EarConnection } from "./ear.registry";
 import { WakeCoordinator } from "./wake/wake-coordinator";
 import { SessionService } from "./session/session.service";
+import { OverlayService } from "../overlay/overlay.service";
 
 const REGISTER_TIMEOUT_MS = 2_000;
 
@@ -25,6 +26,7 @@ export class EarGateway {
     private readonly registry: EarRegistry,
     private readonly wake: WakeCoordinator,
     private readonly sessions: SessionService,
+    private readonly overlay: OverlayService,
   ) {}
 
   async start(): Promise<void> {
@@ -102,6 +104,32 @@ export class EarGateway {
             connection = this.registry.register(socket, message);
             const ack: AckMessage = { type: "ack", deviceId: message.deviceId };
             this.sendJson(socket, ack);
+            this.overlay.bindDevice(
+              message.deviceId,
+              (msg) => {
+                try { socket.send(JSON.stringify(msg)); } catch (err) {
+                  this.logger.warn({ err, deviceId: message.deviceId }, "overlay send failed");
+                }
+              },
+              async () => {
+                if (!connection) return;
+                const sid = this.sessions.getActiveSessionIdForDevice(connection.deviceId);
+                if (sid) {
+                  // Domain already painted a finishing overlay (success/error)
+                  // before requesting ttl; pass silentOverlay so terminate
+                  // does not overwrite it with thinking/error.
+                  await this.sessions.terminateExternal(
+                    sid,
+                    "endpoint",
+                    "core:overlay_ttl",
+                    undefined,
+                    { silentOverlay: true },
+                  );
+                }
+                // Hide the overlay on the Ear by sending a final idle state.
+                this.overlay.set(connection.deviceId, { kind: "idle" }, {}, "overlay_ttl_idle");
+              },
+            );
             this.logger.info(
               { deviceId: message.deviceId, deviceName: message.deviceName },
               "Ear registered",
@@ -112,6 +140,9 @@ export class EarGateway {
             if (!connection) return this.warnUnregistered(socket, message.type);
             const action = this.wake.evaluate(connection, message);
             this.sendJson(socket, { type: "wake_ack", action });
+            if (action === "proceed") {
+              this.overlay.set(connection.deviceId, { kind: "listening" }, {}, "wake_ack_proceed");
+            }
             this.logger.info(
               {
                 deviceId: connection.deviceId,
@@ -143,6 +174,7 @@ export class EarGateway {
       clearTimeout(registerTimer);
       if (connection) {
         void this.sessions.handleDisconnect(connection);
+        this.overlay.unbindDevice(connection.deviceId);
         this.registry.unregister(connection.deviceId);
       }
       this.logger.info({ remote, code, reason: reason.toString() }, "Ear disconnected");
@@ -178,7 +210,7 @@ export class EarGateway {
     const now = Date.now();
     const elapsed = now - lastAt.value;
     if (elapsed >= 1_000) {
-      this.logger.info(
+      this.logger.debug(
         {
           deviceId,
           frames: frameCount.value,

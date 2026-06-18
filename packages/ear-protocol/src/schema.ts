@@ -25,6 +25,40 @@ export const CueEnum = z.enum([
 ]);
 export type Cue = z.infer<typeof CueEnum>;
 
+// Cues allowed inside `overlay_update.state.sound`. The `wake` cue is
+// played locally by the Ear on wake-word detection and never flows over
+// the wire in this field.
+export const OverlaySoundEnum = z.enum([
+  "endpoint",
+  "error",
+  "ack_done",
+  "ack_continue",
+  "ack_thinking",
+  "ack_success",
+  "ack_error",
+  "ack_unknown",
+]);
+export type OverlaySound = z.infer<typeof OverlaySoundEnum>;
+
+export const OverlayKindEnum = z.enum([
+  "idle",
+  "listening",
+  "capturing",
+  "thinking",
+  "processing",
+  "success",
+  "error",
+]);
+export type OverlayKind = z.infer<typeof OverlayKindEnum>;
+
+export const OverlayStateSchema = z.object({
+  kind: OverlayKindEnum,
+  hint: z.string().max(120).optional(),
+  caption: z.string().max(240).optional(),
+  sound: OverlaySoundEnum.optional(),
+});
+export type OverlayState = z.infer<typeof OverlayStateSchema>;
+
 export const SessionModeEnum = z.enum(["regular", "continuous"]);
 export type SessionMode = z.infer<typeof SessionModeEnum>;
 
@@ -114,11 +148,16 @@ export const FinalTranscriptMessageSchema = z.object({
 });
 export type FinalTranscriptMessage = z.infer<typeof FinalTranscriptMessageSchema>;
 
-export const PlayCueMessageSchema = z.object({
-  type: z.literal("play_cue"),
-  cue: CueEnum,
+// Drives the interactive overlay on the Ear: visual state + optional cue
+// sound in a single atomic message. Replaces the removed `play_cue`. The
+// `seq` field is strictly monotonic per device per connection so the Ear
+// can drop any out-of-order delivery.
+export const OverlayUpdateMessageSchema = z.object({
+  type: z.literal("overlay_update"),
+  seq: z.number().int().positive(),
+  state: OverlayStateSchema,
 });
-export type PlayCueMessage = z.infer<typeof PlayCueMessageSchema>;
+export type OverlayUpdateMessage = z.infer<typeof OverlayUpdateMessageSchema>;
 
 export const CoreSessionEndMessageSchema = z.object({
   type: z.literal("session_end"),
@@ -150,7 +189,7 @@ export const CoreToEarMessageSchema = z.discriminatedUnion("type", [
   WakeAckMessageSchema,
   PartialTranscriptMessageSchema,
   FinalTranscriptMessageSchema,
-  PlayCueMessageSchema,
+  OverlayUpdateMessageSchema,
   SessionModeChangeMessageSchema,
   ArmCaptureMessageSchema,
   CoreSessionEndMessageSchema,

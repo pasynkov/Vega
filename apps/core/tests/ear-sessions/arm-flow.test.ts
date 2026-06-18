@@ -35,8 +35,9 @@ function makeRouter(opts: {
     ),
     terminateExternal: vi.fn(async () => true),
   } as any;
-  const router = new EarSessionRouter(new StubLogger() as any, registry, sessions);
-  return { router, sessions, send };
+  const overlay = { set: vi.fn(() => true) } as any;
+  const router = new EarSessionRouter(new StubLogger() as any, registry, sessions, overlay);
+  return { router, sessions, send, overlay };
 }
 
 describe("Bug-2: arm terminates the device's active session before dispatch", () => {
@@ -57,7 +58,13 @@ describe("Bug-2: arm terminates the device's active session before dispatch", ()
     await Promise.resolve();
 
     expect(result.ok).toBe(true);
-    expect(terminateSpy).toHaveBeenCalledWith("active-sid", "endpoint", "core:tool_release");
+    expect(terminateSpy).toHaveBeenCalledWith(
+      "active-sid",
+      "endpoint",
+      "core:tool_release",
+      undefined,
+      { silentOverlay: true },
+    );
     const armIdx = sendOrder.findIndex((e) => e.startsWith("send:") && e.includes("arm_capture"));
     const termIdx = sendOrder.findIndex((e) => e === "terminate:active-sid");
     expect(termIdx).toBeGreaterThanOrEqual(0);

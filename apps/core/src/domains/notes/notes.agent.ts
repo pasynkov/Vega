@@ -4,8 +4,9 @@ const NOTES_SUPERVISOR_SYSTEM_PROMPT = `\
 Ты — агент заметок Веги. TTS НЕ ПОДКЛЮЧЁН. ОТВЕЧАТЬ ТЕКСТОМ ЗАПРЕЩЕНО. Ты обязан ВЫЗВАТЬ РОВНО ОДИН ТУЛ и закончить ход. Финальный assistant-message — пустая строка либо одно слово "ok". Никаких уточнений, никаких вопросов, никаких объяснений.
 
 Доступные tool'ы:
-- save_short_note(text): сохранить короткую заметку (одно-два предложения, текст известен прямо в реплике).
+- save_short_note(text): сохранить короткую заметку (одно-два предложения, текст известен прямо в реплике). Сам выставит success-оверлей и закроет сессию.
 - open_continuous_session(intent): открыть СВЕЖУЮ длинную сессию диктовки (continuous mode + Submarine cue). После этого вызова сессией владеет отдельный notes-session агент.
+- update_overlay({kind, hint?, caption?, sound?, ttl?}): покрасить интерактивный оверлей на ухе. Используй ДО save_short_note чтобы показать processing (kind=processing, hint="Сохраняю заметку…", sound=ack_thinking) если ожидаешь задержку. Для явной ошибки — kind=error, hint=короткая причина, sound=ack_error, ttl=2500.
 
 Правила выбора:
 1. Реплика просит ДЛИННУЮ/большую заметку, или говорит "запиши заметку про X" без полного текста, или просит начать диктовку → open_continuous_session. intent = краткое описание ("дневник", "идея проекта", "заметка про X").
@@ -26,8 +27,9 @@ TTS НЕ ПОДКЛЮЧЁН. ОТВЕЧАТЬ ТЕКСТОМ ЗАПРЕЩЕНО.
 - сессию прервали тапом / safety cap — это твой последний шанс финализировать.
 
 Tools (вызывай максимум один):
-- finalize_note(cleanText): пользователь закончил. cleanText — весь накопленный текст БЕЗ триггерных фраз ("конец заметки", "стоп" и т.п.) и БЕЗ артефактов распознавания. Закрывает сессию.
-- discard_note(reason="user"|"noise"|"off-topic"|"other"): сбросить (полное удаление файла). Закрывает сессию.
+- finalize_note(cleanText): пользователь закончил. cleanText — весь накопленный текст БЕЗ триггерных фраз ("конец заметки", "стоп" и т.п.) и БЕЗ артефактов распознавания. Сам выставит success-оверлей и закрывает сессию.
+- discard_note(reason="user"|"noise"|"off-topic"|"other"): сбросить (полное удаление файла). Сам выставит error-оверлей и закрывает сессию.
+- update_overlay({kind, hint?, sound?, ttl?}): покрасить оверлей вручную если процесс задерживается (kind=processing, hint="Сохраняю…", sound=ack_thinking). Финализирующие tools уже сами красят success/error, дублировать не надо.
 
 Сигналы finalize:
 - триггерные фразы в КОНЦЕ накопленного текста: "конец заметки", "стоп", "это всё", "вот и всё", "готово", "хватит", "финал заметки"
@@ -52,6 +54,9 @@ export function buildNotesSupervisorSpec(tools: AgentTool[]): AgentSpec {
     systemPrompt: NOTES_SUPERVISOR_SYSTEM_PROMPT,
     tools,
     enabled: true,
+    // Picking save_short_note vs open_continuous_session is a small
+    // tool-routing decision; haiku is fast and accurate enough here.
+    model: "claude-haiku-4-5-20251001",
   };
 }
 

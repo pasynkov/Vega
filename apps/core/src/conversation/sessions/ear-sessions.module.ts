@@ -5,13 +5,14 @@ import { EarRegistry } from "../ear/ear.registry";
 import { ConversationService } from "../conversation.service";
 import type { TurnOutcome } from "../conversation.service";
 import { SessionService } from "../ear/session/session.service";
-import type { CoreEndReason, Cue, PlayCueMessage } from "@vega/ear-protocol";
+import type { CoreEndReason, OverlaySound } from "@vega/ear-protocol";
 import type { OwnedSessionController } from "../ear/session/session.service";
 import { EarSessionRouter } from "./ear-session-router.service";
 import { SessionAgentRunner } from "./session-agent-runner.service";
 import { FlushHookRegistry } from "./flush-hook-registry.service";
 import type { EarSessionHandle } from "./ear-session-handle";
 import { isWakeWordFinal } from "../ear/wake/wake-vocabulary";
+import { OverlayService } from "../overlay/overlay.service";
 
 @Global()
 @Module({
@@ -28,23 +29,39 @@ export class EarSessionsModule implements OnApplicationBootstrap {
     private readonly conversation: ConversationService,
     private readonly flushHooks: FlushHookRegistry,
     private readonly earRegistry: EarRegistry,
+    private readonly overlay: OverlayService,
   ) {}
 
-  private broadcastCue(cue: Cue): void {
-    const msg: PlayCueMessage = { type: "play_cue", cue };
-    for (const conn of this.earRegistry.list()) {
-      try {
-        conn.socket.send(JSON.stringify(msg));
-      } catch (err) {
-        this.logger.warn({ err, deviceId: conn.deviceId, cue }, "broadcastCue send failed");
-      }
-    }
+  // Paint the outcome of an orchestrator turn on the overlay of the
+  // device that owns the session. ack_unknown / ack_error map to an
+  // error overlay with the matching cue sound and a short ttl so the
+  // overlay fades back to idle; ack/acted is a no-op (a domain handler
+  // will paint its own success state via update_overlay).
+  private paintOutcome(sessionId: string, outcome: TurnOutcome): void {
+    if (outcome === "acted") return;
+    const sound = this.soundForOutcome(outcome);
+    if (!sound) return;
+    const deviceId = this.deviceIdForSession(sessionId) ?? this.fallbackDeviceId();
+    if (!deviceId) return;
+    const hint = outcome === "unknown" ? "Не понял запрос" : "Что-то пошло не так";
+    const ttl = outcome === "unknown" ? 1500 : 2500;
+    this.overlay.set(deviceId, { kind: "error", hint, sound }, { ttl }, `outcome_${outcome}`);
   }
 
-  private cueForOutcome(outcome: TurnOutcome): Cue | null {
+  private fallbackDeviceId(): string | undefined {
+    return this.earRegistry.list()[0]?.deviceId;
+  }
+
+  private soundForOutcome(outcome: TurnOutcome): OverlaySound | null {
     if (outcome === "acted") return null;
     if (outcome === "unknown") return "ack_unknown";
     return "ack_error";
+  }
+
+  private deviceIdForSession(sessionId: string): string | undefined {
+    const direct = this.sessions.getDeviceIdForSession(sessionId);
+    if (direct) return direct;
+    return this.earRegistry.list().find((c) => c.activeSessionId === sessionId)?.deviceId;
   }
 
   onApplicationBootstrap(): void {
@@ -123,11 +140,11 @@ export class EarSessionsModule implements OnApplicationBootstrap {
       void (async () => {
         try {
           const res = await this.conversation.handleTurn(sessionId, trimmed);
-          const cue = this.cueForOutcome(res.outcome);
-          if (cue) this.broadcastCue(cue);
+          this.paintOutcome(sessionId, res.outcome);
         } catch (err) {
           this.logger.warn({ err, sessionId }, "Per-final handleTurn threw");
-          this.broadcastCue("ack_error");
+          const deviceId = this.deviceIdForSession(sessionId) ?? this.fallbackDeviceId();
+          if (deviceId) this.overlay.set(deviceId, { kind: "error", hint: "Сбой", sound: "ack_error" }, { ttl: 2500 }, "outcome_caught_error");
         }
       })();
     });
@@ -141,11 +158,11 @@ export class EarSessionsModule implements OnApplicationBootstrap {
       if (seen && seen.size > 0) return;
       try {
         const res = await this.conversation.handleTurn(sessionId, finalText);
-        const cue = this.cueForOutcome(res.outcome);
-        if (cue) this.broadcastCue(cue);
+        this.paintOutcome(sessionId, res.outcome);
       } catch (err) {
         this.logger.warn({ err, sessionId }, "Endpoint fallback handleTurn threw");
-        this.broadcastCue("ack_error");
+        const deviceId = this.deviceIdForSession(sessionId);
+        if (deviceId) this.overlay.set(deviceId, { kind: "error", sound: "ack_error" });
       }
     });
     this.logger.info({}, "EarSessionsModule wired router into session pipeline");
@@ -157,6 +174,16 @@ export class EarSessionsModule implements OnApplicationBootstrap {
     initiator: string,
   ): Promise<void> {
     const coreReason: CoreEndReason = reason;
-    await this.sessions.terminateExternal(sessionId, coreReason, initiator);
+    // Domain handlers (finalize_note / discard_note) already painted a
+    // finishing overlay (success/error with ttl) before requesting the
+    // runner to release. Pass silentOverlay so terminate does not
+    // overwrite it with thinking-on-endpoint.
+    await this.sessions.terminateExternal(
+      sessionId,
+      coreReason,
+      initiator,
+      undefined,
+      { silentOverlay: true },
+    );
   }
 }

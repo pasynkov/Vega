@@ -168,12 +168,14 @@ function setupHarness(opts: {
     earSessionOwnerCapMs: 90_000,
   } as any;
 
+  const overlayStub = { set: () => true, cancelTtl: () => {}, bindDevice: () => {}, unbindDevice: () => {} } as any;
   const sessions = new SessionService(
     new StubLogger() as any,
     earRegistry,
     env,
     new StubDeepgram() as any,
     new StubStore() as any,
+    overlayStub,
   );
 
   // Build the route tool reply as the AIMessage with tool_calls. The
@@ -206,11 +208,11 @@ function setupHarness(opts: {
   process.env.VEGA_NOTES_DIR = opts.notesDir;
   const storage = new NotesStorageService(new StubLogger() as any);
   const sessionSpecRef: { spec: AgentSpec | null } = { spec: null };
-  const router = new EarSessionRouter(new StubLogger() as any, earRegistry, sessions);
+  const router = new EarSessionRouter(new StubLogger() as any, earRegistry, sessions, overlayStub);
   const runner = new SessionAgentRunner(new StubLogger() as any, llm, env);
   const flushHooks = new FlushHookRegistry();
 
-  const { supervisorTools, sessionTools } = buildNotesTools(storage, sessions, router, sessionSpecRef);
+  const { supervisorTools, sessionTools } = buildNotesTools(storage, sessions, router, overlayStub, sessionSpecRef);
   const notesSupervisorSpec = buildNotesSupervisorSpec(supervisorTools);
   const notesSessionSpec = buildNotesSessionSpec(sessionTools);
   sessionSpecRef.spec = notesSessionSpec;

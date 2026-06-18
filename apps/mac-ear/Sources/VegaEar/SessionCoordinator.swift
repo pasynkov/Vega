@@ -10,6 +10,7 @@ final class SessionCoordinator {
     private let socket: EarSocket
     private let cues: CuePlayer
     private let status: StatusItemController
+    private let overlay: OverlayWindowController
     private let regularSafetyCapMs: Int = 30_000
     private let continuousModeSafetyCapMs: Int = 60_000
 
@@ -32,7 +33,8 @@ final class SessionCoordinator {
         encoder: AudioFrameProducer,
         socket: EarSocket,
         cues: CuePlayer,
-        statusController: StatusItemController
+        statusController: StatusItemController,
+        overlay: OverlayWindowController
     ) {
         self.deviceId = deviceId
         self.wake = wake
@@ -41,6 +43,7 @@ final class SessionCoordinator {
         self.socket = socket
         self.cues = cues
         self.status = statusController
+        self.overlay = overlay
     }
 
     func start() throws {
@@ -86,6 +89,7 @@ final class SessionCoordinator {
         wake.stop()
         audio.stop()
         socket.disconnect()
+        DispatchQueue.main.async { self.overlay.viewModel.hide() }
     }
 
     func setPaused(_ paused: Bool) {
@@ -97,6 +101,7 @@ final class SessionCoordinator {
                 self.activeSessionId = nil
                 self.safetyTimer?.cancel()
                 self.safetyTimer = nil
+                DispatchQueue.main.async { self.overlay.viewModel.hide() }
             }
         }
     }
@@ -239,13 +244,14 @@ final class SessionCoordinator {
         guard activeSessionId == sessionId else { return }
         NSLog("[VegaEar] endSessionLocally session=\(sessionId) reason=\(reason.rawValue) bytesSent=\(bytesSentInSession)")
         socket.sendJSON(EarSessionEndMessage(sessionId: sessionId, reason: reason))
-        cues.play(.endpoint)
         activeSessionId = nil
         silenceDetector = nil
         safetyTimer?.cancel()
         safetyTimer = nil
         status.setState(.idle)
         onSessionStateChange?(false)
+        // Overlay is driven by Core. Do not hide locally; Core will paint
+        // the next state (thinking / error / idle) after handleTurn.
     }
 
     private func accumulateAndMaybeReportRms(pcm: Data) {
@@ -281,10 +287,11 @@ final class SessionCoordinator {
             guard self.activeSessionId == sessionId else { return }
             NSLog("[VegaEar] Ear ending session=\(sessionId) initiator=ear:safety_timer reason=timeout bytesSent=\(self.bytesSentInSession) mode=\(self.sessionMode.rawValue) cap=\(capMs)")
             self.socket.sendJSON(EarSessionEndMessage(sessionId: sessionId, reason: .timeout))
-            self.cues.play(.endpoint)
             self.activeSessionId = nil
             self.status.setState(.idle)
             self.onSessionStateChange?(false)
+            // Overlay handed off to Core (it will paint error+ttl on the
+            // resulting terminate(timeout) path).
         }
         timer.resume()
         safetyTimer = timer
@@ -305,18 +312,8 @@ final class SessionCoordinator {
                     }
                 }
             }
-        case .playCue(let m):
-            switch m.cue {
-            case .wake: cues.play(.wake)
-            case .endpoint: cues.play(.endpoint)
-            case .error: cues.play(.error)
-            case .ackDone: cues.play(.ackDone)
-            case .ackContinue: cues.play(.ackContinue)
-            case .ackThinking: cues.play(.ackThinking)
-            case .ackSuccess: cues.play(.ackSuccess)
-            case .ackError: cues.play(.ackError)
-            case .ackUnknown: cues.play(.ackUnknown)
-            }
+        case .overlayUpdate(let m):
+            applyOverlayUpdate(m)
         case .sessionEnd(let m):
             serial.async {
                 NSLog("[VegaEar] Core ended session=\(m.sessionId) reason=\(m.reason.rawValue) detail=\(m.detail ?? "-") bytesSent=\(self.bytesSentInSession)")
@@ -328,13 +325,17 @@ final class SessionCoordinator {
                 case .endpoint:
                     self.status.setState(.idle)
                 case .timeout:
-                    self.cues.play(.endpoint)
                     self.status.setState(.idle)
                 case .sttError, .user:
-                    self.cues.play(.error)
                     self.status.setState(.error(m.detail ?? "Session ended: \(m.reason.rawValue)"))
                 }
                 self.onSessionStateChange?(false)
+                // Intentionally NOT calling overlay.viewModel.hide() here.
+                // The overlay is decoupled from session lifecycle so the
+                // user keeps seeing "thinking" between session_end and
+                // the next overlay_update (arm_capture, success, error).
+                // The overlay disappears when Core emits {kind: idle} or
+                // on WS disconnect.
             }
         case .partialTranscript(let m):
             NSLog("[VegaEar] partial: \(m.text)")
@@ -346,10 +347,36 @@ final class SessionCoordinator {
             serial.async { self.applySessionMode(m) }
         case .armCapture(let m):
             handleArmCapture(mode: m.mode)
-        case .unknownCue(let raw):
-            NSLog("[VegaEar] Ignoring unknown cue from Core: \(raw)")
+        case .unknownOverlay(let seq, let raw):
+            NSLog("[VegaEar] Tolerating unknown overlay state seq=\(seq) kind=\(raw.rawKind)")
+            DispatchQueue.main.async { self.overlay.viewModel.applyUnknown(seq: seq, raw: raw) }
         case .unknownSessionMode(let raw):
             NSLog("[VegaEar] Ignoring unknown session_mode value from Core: \(raw)")
+        }
+    }
+
+    private func applyOverlayUpdate(_ message: OverlayUpdateMessage) {
+        // Sound and visual arrive atomically. Play the cue first so the
+        // perceived audio aligns with the visual transition.
+        if let sound = message.state.sound {
+            playOverlaySound(sound)
+        }
+        DispatchQueue.main.async {
+            self.overlay.viewModel.apply(message)
+            self.overlay.show()
+        }
+    }
+
+    private func playOverlaySound(_ sound: OverlaySound) {
+        switch sound {
+        case .endpoint:     cues.play(.endpoint)
+        case .error:        cues.play(.error)
+        case .ackDone:      cues.play(.ackDone)
+        case .ackContinue:  cues.play(.ackContinue)
+        case .ackThinking:  cues.play(.ackThinking)
+        case .ackSuccess:   cues.play(.ackSuccess)
+        case .ackError:     cues.play(.ackError)
+        case .ackUnknown:   cues.play(.ackUnknown)
         }
     }
 

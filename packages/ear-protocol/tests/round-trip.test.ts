@@ -4,6 +4,8 @@ import { join } from "node:path";
 import {
   CoreToEarMessageSchema,
   EarToCoreMessageSchema,
+  OverlayStateSchema,
+  OverlayUpdateMessageSchema,
   encodeAudioFrame,
   decodeAudioFrame,
   sessionShortIdFromUuid,
@@ -19,9 +21,13 @@ const coreKeys = [
   "wake_ack_yield",
   "partial_transcript",
   "final_transcript",
-  "play_cue_wake",
-  "play_cue_endpoint",
-  "play_cue_error",
+  "overlay_update_listening",
+  "overlay_update_capturing",
+  "overlay_update_thinking",
+  "overlay_update_processing",
+  "overlay_update_success",
+  "overlay_update_error",
+  "overlay_update_idle",
   "core_session_end",
   "core_session_end_with_detail",
 ] as const;
@@ -53,6 +59,53 @@ describe("session_start userId is required", () => {
     const bad = { ...(fixtures.session_start as Record<string, unknown>) };
     delete (bad as Record<string, unknown>).userId;
     const result = EarToCoreMessageSchema.safeParse(bad);
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("overlay_update bounds", () => {
+  it("rejects `wake` in state.sound", () => {
+    const result = OverlayStateSchema.safeParse({ kind: "listening", sound: "wake" });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts every overlay kind", () => {
+    const kinds = ["idle", "listening", "capturing", "thinking", "processing", "success", "error"];
+    for (const kind of kinds) {
+      const result = OverlayStateSchema.safeParse({ kind });
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it("rejects hint longer than 120 chars", () => {
+    const result = OverlayStateSchema.safeParse({
+      kind: "thinking",
+      hint: "x".repeat(121),
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects caption longer than 240 chars", () => {
+    const result = OverlayStateSchema.safeParse({
+      kind: "capturing",
+      caption: "x".repeat(241),
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects non-positive seq", () => {
+    const result = OverlayUpdateMessageSchema.safeParse({
+      type: "overlay_update",
+      seq: 0,
+      state: { kind: "idle" },
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("play_cue is removed", () => {
+  it("does not parse as a Core->Ear message anymore", () => {
+    const result = CoreToEarMessageSchema.safeParse({ type: "play_cue", cue: "endpoint" });
     expect(result.success).toBe(false);
   });
 });

@@ -192,6 +192,11 @@ export class SessionAgentRunner {
     const abort = new AbortController();
     state.currentAbort = abort;
     const turn = (async () => {
+      const startedAt = Date.now();
+      this.logger.info(
+        { sessionId: state.handle.sessionId, owner: state.spec.name, model: state.spec.model ?? "default", phase: "finalize_check", promptLen: prompt.length },
+        "LLM → session-agent",
+      );
       try {
         const result = (await state.agent.invoke(
           { messages: [new HumanMessage(prompt)] },
@@ -205,6 +210,19 @@ export class SessionAgentRunner {
         )) as { messages: BaseMessage[] };
         if (abort.signal.aborted || state.released) return;
         const release = findReleaseInLastMessages(result.messages);
+        const tokens = sumRunnerUsage(result.messages);
+        this.logger.info(
+          {
+            sessionId: state.handle.sessionId,
+            owner: state.spec.name,
+            phase: "finalize_check",
+            ms: Date.now() - startedAt,
+            inputTokens: tokens.input,
+            outputTokens: tokens.output,
+            release: release?.reason,
+          },
+          "LLM ← session-agent",
+        );
         if (release) {
           await this.releaseFromTool(state, release.reason);
         }
@@ -272,6 +290,11 @@ export class SessionAgentRunner {
     rolling: string,
   ): Promise<void> {
     if (state.released) return;
+    const startedAt = Date.now();
+    this.logger.info(
+      { sessionId: state.handle.sessionId, owner: state.spec.name, model: state.spec.model ?? "default", phase: "terminal_check", reason },
+      "LLM → session-agent",
+    );
     try {
       const abort = new AbortController();
       state.currentAbort = abort;
@@ -287,6 +310,19 @@ export class SessionAgentRunner {
       )) as { messages: BaseMessage[] };
       if (state.released) return;
       const release = findReleaseInLastMessages(result.messages);
+      const tokens = sumRunnerUsage(result.messages);
+      this.logger.info(
+        {
+          sessionId: state.handle.sessionId,
+          owner: state.spec.name,
+          phase: "terminal_check",
+          ms: Date.now() - startedAt,
+          inputTokens: tokens.input,
+          outputTokens: tokens.output,
+          release: release?.reason,
+        },
+        "LLM ← session-agent",
+      );
       if (release) {
         await this.releaseFromTool(state, release.reason);
         return;
@@ -385,4 +421,17 @@ async function safeFireRelease(
   } catch (err) {
     logger.warn({ err, sessionId: state.handle.sessionId, initiator }, "Release hook threw");
   }
+}
+
+function sumRunnerUsage(messages: BaseMessage[]): { input: number; output: number } {
+  let input = 0;
+  let output = 0;
+  for (const m of messages) {
+    const u = (m as any).usage_metadata ?? (m as any).response_metadata?.usage;
+    if (u) {
+      if (typeof u.input_tokens === "number") input += u.input_tokens;
+      if (typeof u.output_tokens === "number") output += u.output_tokens;
+    }
+  }
+  return { input, output };
 }

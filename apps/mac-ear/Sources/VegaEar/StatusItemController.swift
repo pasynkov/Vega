@@ -66,6 +66,15 @@ final class StatusItemController: NSObject {
     private var currentState: ListeningState = .idle
     private var sessionActive = false
 
+    // Screen-coordinate frame of the menu-bar button. The overlay anchors
+    // its top-right corner under the status icon so it reads as a tray
+    // dropdown. Returns nil before the button is laid out.
+    var statusButtonScreenFrame: NSRect? {
+        guard let button = statusItem.button, let window = button.window else { return nil }
+        let inWindow = button.convert(button.bounds, to: nil)
+        return window.convertToScreen(inWindow)
+    }
+
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         stateMenuItem = NSMenuItem(title: ListeningState.idle.menuLabel, action: nil, keyEquivalent: "")

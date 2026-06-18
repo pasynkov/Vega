@@ -47,17 +47,62 @@
     "sessionId": "22222222-2222-4222-8222-222222222222",
     "text": "напомни купить молоко"
   },
-  "play_cue_wake": {
-    "type": "play_cue",
-    "cue": "wake"
+  "overlay_update_listening": {
+    "type": "overlay_update",
+    "seq": 1,
+    "state": {
+      "kind": "listening"
+    }
   },
-  "play_cue_endpoint": {
-    "type": "play_cue",
-    "cue": "endpoint"
+  "overlay_update_capturing": {
+    "type": "overlay_update",
+    "seq": 2,
+    "state": {
+      "kind": "capturing",
+      "caption": "напомни купить"
+    }
   },
-  "play_cue_error": {
-    "type": "play_cue",
-    "cue": "error"
+  "overlay_update_thinking": {
+    "type": "overlay_update",
+    "seq": 3,
+    "state": {
+      "kind": "thinking",
+      "caption": "напомни купить молоко"
+    }
+  },
+  "overlay_update_processing": {
+    "type": "overlay_update",
+    "seq": 4,
+    "state": {
+      "kind": "processing",
+      "hint": "Сохраняю заметку…",
+      "sound": "ack_thinking"
+    }
+  },
+  "overlay_update_success": {
+    "type": "overlay_update",
+    "seq": 5,
+    "state": {
+      "kind": "success",
+      "hint": "Готово",
+      "sound": "ack_success"
+    }
+  },
+  "overlay_update_error": {
+    "type": "overlay_update",
+    "seq": 6,
+    "state": {
+      "kind": "error",
+      "hint": "Не понял запрос",
+      "sound": "ack_error"
+    }
+  },
+  "overlay_update_idle": {
+    "type": "overlay_update",
+    "seq": 7,
+    "state": {
+      "kind": "idle"
+    }
   },
   "core_session_end": {
     "type": "session_end",

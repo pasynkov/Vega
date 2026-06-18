@@ -83,7 +83,9 @@ export class SupervisorNode {
     activeDomains: string[],
     validator: (raw: unknown) => string[],
   ): Promise<RouteOutput | null> {
-    const model = this.llm.getModel();
+    // Supervisor routing is a cheap "pick a domain" decision — haiku is
+    // 2-3× faster than sonnet and accurate enough for this prompt shape.
+    const model = this.llm.getModel({ model: "claude-haiku-4-5-20251001" });
     const schema = buildJsonSchema(RouteSchema);
     // Patch dynamic enum: active domain names + __end__. The DTO can't
     // declare a static @IsIn because the domain list is built at runtime
@@ -111,14 +113,34 @@ export class SupervisorNode {
       tool_choice: { type: "tool", name: "route" },
     });
 
+    const modelId = "claude-haiku-4-5-20251001";
     for (let attempt = 0; attempt < 2; attempt++) {
       let reply: AIMessage;
+      const startedAt = Date.now();
+      this.logger.info(
+        { model: modelId, attempt, messages: messages.length, domains: activeDomains },
+        "LLM → supervisor.route",
+      );
       try {
         reply = (await bound.invoke(messages)) as AIMessage;
       } catch (err) {
-        this.logger.warn({ attempt, err }, "Supervisor tool-call invoke threw");
+        this.logger.warn({ attempt, err, ms: Date.now() - startedAt }, "Supervisor tool-call invoke threw");
         continue;
       }
+      const usage = (reply as any).usage_metadata
+        ?? (reply as any).response_metadata?.usage
+        ?? undefined;
+      this.logger.info(
+        {
+          model: modelId,
+          attempt,
+          ms: Date.now() - startedAt,
+          inputTokens: usage?.input_tokens,
+          outputTokens: usage?.output_tokens,
+          toolCalls: (reply.tool_calls ?? []).map((c) => c.name),
+        },
+        "LLM ← supervisor.route",
+      );
       const call = extractRouteCall(reply);
       if (!call) {
         this.logger.warn({ attempt }, "Supervisor reply contained no tool call");

@@ -12,11 +12,12 @@ function makeStubs() {
     discardInProgress: vi.fn(() => ({ path: null })),
     hasInProgress: vi.fn(() => false),
   };
-  const sessions = { emitCue: vi.fn() } as any;
+  const sessions = { getDeviceIdForSession: vi.fn(() => undefined) } as any;
+  const overlay = { set: vi.fn(() => true), cancelTtl: vi.fn() } as any;
   const router = { arm: vi.fn(() => ({ ok: true, mode: "continuous" as const })) } as any;
   const sessionSpecRef: { spec: AgentSpec | null } = { spec: { name: "notes-session" } as AgentSpec };
-  const { supervisorTools, sessionTools } = buildNotesTools(storage as any, sessions, router, sessionSpecRef);
-  return { supervisorTools, sessionTools, storage };
+  const { supervisorTools, sessionTools } = buildNotesTools(storage as any, sessions, router, overlay, sessionSpecRef);
+  return { supervisorTools, sessionTools, storage, overlay };
 }
 
 function findTool(tools: AgentTool[], name: string): AgentTool {

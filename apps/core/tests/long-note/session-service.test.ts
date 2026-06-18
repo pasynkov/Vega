@@ -27,21 +27,31 @@ class StubStore {
   async persist() {}
 }
 
-function makeService(): SessionService {
+class StubOverlay {
+  set = vi.fn(() => true);
+  cancelTtl = vi.fn();
+  bindDevice = vi.fn();
+  unbindDevice = vi.fn();
+}
+
+function makeService(overlay: StubOverlay = new StubOverlay()): { svc: SessionService; overlay: StubOverlay } {
   const env = { deepgramLanguage: "ru", sessionTimeoutMs: 30_000 } as any;
-  return new SessionService(
+  const svc = new SessionService(
     new StubLogger() as any,
     new StubRegistry() as any,
     env,
     new StubDeepgram() as any,
     new StubStore() as any,
+    overlay as any,
   );
+  return { svc, overlay };
 }
 
 describe("SessionService long-note mode", () => {
   let svc: SessionService;
+  let overlay: StubOverlay;
   beforeEach(() => {
-    svc = makeService();
+    ({ svc, overlay } = makeService());
     svc.start(
       { deviceId: "dev-1", deviceName: "test", socket: { send: vi.fn() } as any } as any,
       {
@@ -79,23 +89,37 @@ describe("SessionService long-note mode", () => {
     expect(internal.silenceCapMs).toBe(CONTINUOUS_MODE_SILENCE_CAP_MS);
   });
 
-  it("emitCue / setMode return false for unknown session", () => {
+  it("setMode / setSilenceCap return false for unknown session", () => {
     expect(svc.setMode("unknown-session", "continuous")).toBe(false);
-    expect(svc.emitCue("unknown-session", "ack_done")).toBe(false);
     expect(svc.setSilenceCap("unknown-session", 1234)).toBe(false);
   });
 
-  it("addTranscriptListener fires on partial and final", () => {
+  it("addTranscriptListener fires on partial and final without overlay updates for a regular session", () => {
     const events: Array<{ k: string; t: string }> = [];
     svc.addTranscriptListener((_sid, kind, text) => events.push({ k: kind, t: text }));
     const sid = "22222222-2222-2222-2222-222222222222";
     const internal: any = (svc as any).bySessionId.get(sid);
-    // Bypass deepgram and call private methods directly.
     (svc as any).onPartial(internal, "hi");
     (svc as any).onFinal(internal, "hello there", 0.9);
     expect(events).toEqual([
       { k: "partial", t: "hi" },
       { k: "final", t: "hello there" },
     ]);
+    // Regular (non-continuous) sessions do NOT push captions to the overlay
+    // on partial/final — the overlay stays in its current visual.
+    expect(overlay.set).not.toHaveBeenCalled();
+  });
+
+  it("continuous mode + owner: each final paints a capturing caption", () => {
+    const sid = "22222222-2222-2222-2222-222222222222";
+    expect(svc.setMode(sid, "continuous")).toBe(true);
+    const internal: any = (svc as any).bySessionId.get(sid);
+    internal.ownerController = { pushFinal: () => {}, signalEnd: () => {}, dispose: () => {} };
+    (svc as any).onFinal(internal, "купи молоко", 0.9);
+    (svc as any).onFinal(internal, "и хлеб", 0.9);
+    const captionCalls = overlay.set.mock.calls
+      .filter((c: any[]) => c[1]?.kind === "capturing")
+      .map((c: any[]) => c[1].caption);
+    expect(captionCalls).toEqual(["купи молоко", "и хлеб"]);
   });
 });

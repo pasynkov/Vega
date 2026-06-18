@@ -3,11 +3,9 @@ import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
 import {
   CoreEndReason,
   CoreSessionEndMessage,
-  Cue,
   EarSessionEndMessage,
   FinalTranscriptMessage,
   PartialTranscriptMessage,
-  PlayCueMessage,
   SessionMode,
   SessionModeChangeMessage,
   SessionStartMessage,
@@ -19,6 +17,7 @@ import { EnvConfig } from "../../../config/env";
 import { RecordingStore, SessionRecord } from "../recording/recording-store";
 import { SilenceDetector } from "./silence-detector";
 import type { AgentSpec } from "../../kernel/agent.types";
+import { OverlayService } from "../../overlay/overlay.service";
 
 type TranscriptListener = (sessionId: string, kind: "partial" | "final", text: string) => void;
 type EndpointListener = (sessionId: string, finalText: string) => void | Promise<void>;
@@ -67,6 +66,7 @@ export class SessionService {
     private readonly env: EnvConfig,
     private readonly deepgram: DeepgramClient,
     private readonly store: RecordingStore,
+    private readonly overlay: OverlayService,
   ) {}
 
   addTranscriptListener(listener: TranscriptListener): () => void {
@@ -128,13 +128,8 @@ export class SessionService {
     return true;
   }
 
-  emitCue(sessionId: string, cue: Cue): boolean {
-    const session = this.bySessionId.get(sessionId);
-    if (!session || session.closed) return false;
-    const msg: PlayCueMessage = { type: "play_cue", cue };
-    this.sendToEar(session, msg);
-    this.logger.debug({ sessionId, cue }, "Cue emitted");
-    return true;
+  getDeviceIdForSession(sessionId: string): string | undefined {
+    return this.bySessionId.get(sessionId)?.deviceId;
   }
 
   async terminateExternal(
@@ -142,10 +137,11 @@ export class SessionService {
     reason: CoreEndReason,
     initiator: string,
     detail?: string,
+    opts?: { silentOverlay?: boolean },
   ): Promise<boolean> {
     const session = this.bySessionId.get(sessionId);
     if (!session || session.closed) return false;
-    await this.terminate(session, reason, initiator, detail);
+    await this.terminate(session, reason, initiator, detail, opts);
     return true;
   }
 
@@ -306,7 +302,14 @@ export class SessionService {
   async endFromEar(connection: EarConnection, message: EarSessionEndMessage): Promise<void> {
     const session = this.bySessionId.get(message.sessionId);
     if (!session) return;
-    const reason: CoreEndReason = message.reason === "user" ? "user" : "timeout";
+    // ear:vad is a natural endpoint (user finished speaking) — map it to
+    // `endpoint` so terminate paints thinking-with-Pop, not error.
+    const reason: CoreEndReason =
+      message.reason === "user"
+        ? "user"
+        : message.reason === "vad"
+          ? "endpoint"
+          : "timeout";
     if (session.ownerController) {
       try {
         session.ownerController.signalEnd(reason === "user" ? "user" : reason);
@@ -352,6 +355,22 @@ export class SessionService {
     session.finals.push(text);
     if (confidence !== null) session.transcriptConfidence = confidence;
     this.armSilenceTimer(session);
+    // STT caption on the overlay is intentionally scoped to domain-owned
+    // continuous sessions (e.g. notes dictation). For regular short
+    // commands the overlay stays in its current visual (listening /
+    // thinking) without per-final caption noise.
+    //
+    // Kind here is `capturing` (waveform icon) — the user is dictating,
+    // we are not "thinking". Thinking is reserved for the moment between
+    // the user falling silent and the domain returning a verdict.
+    if (session.mode === "continuous" && session.ownerController) {
+      this.overlay.set(
+        session.deviceId,
+        { kind: "capturing", caption: text.slice(0, 240) },
+        {},
+        "stt_final_continuous",
+      );
+    }
     this.notifyTranscriptListeners(session.sessionId, "final", text);
     if (session.ownerController) {
       try {
@@ -374,8 +393,9 @@ export class SessionService {
 
   // Backend silence cap: if Deepgram has not produced any non-empty transcript
   // for `silenceCapMs`, Core considers the utterance finished and terminates
-  // the session with reason=endpoint. This both stops the recording and tells
-  // the Ear (via play_cue endpoint + session_end) to play Pop and idle.
+  // the session with reason=endpoint. The endpoint cue is delivered as part
+  // of the final overlay_update (state.sound: "endpoint") emitted just before
+  // session_end.
   private armSilenceTimer(session: InFlightSession): void {
     if (session.silenceTimer) clearTimeout(session.silenceTimer);
     session.silenceTimer = setTimeout(() => {
@@ -413,6 +433,7 @@ export class SessionService {
     reason: CoreEndReason,
     initiator: string,
     detail?: string,
+    opts?: { silentOverlay?: boolean },
   ): Promise<void> {
     if (session.closed) return;
     session.closed = true;
@@ -435,9 +456,44 @@ export class SessionService {
     );
     session.deepgram?.close();
 
+    // Do NOT cancel the overlay ttl here: a domain may have just painted
+    // a success/error state with ttl (which is what triggers this very
+    // terminate via the ttl callback). Cancelling here would leave the
+    // success/error visible forever — the ttl path needs to fire so it
+    // can emit the final {kind: idle}.
+
+    // Overlay is intentionally decoupled from session lifecycle: keep
+    // showing `thinking` between session_end and the next overlay update
+    // (orchestrator dispatch, arm_capture, domain success/error). Only
+    // the cue sound differentiates natural vs error endings; the visual
+    // never collapses into an error state here. Domain handlers and the
+    // outcome painter are responsible for explicit success/error
+    // overlays. Skip when the caller pre-painted a finishing state and
+    // asked for silentOverlay (ttl / arm flows), OR when a ttl timer is
+    // still pending (a domain ttl is the source of truth for the next
+    // overlay transition).
+    const ttlPending = this.overlay.hasTtlTimer?.(session.deviceId) ?? false;
+    if (!opts?.silentOverlay && !ttlPending) {
+      const lastFinalText = session.finals.length > 0
+        ? session.finals[session.finals.length - 1].trim()
+        : session.partials.length > 0
+          ? session.partials[session.partials.length - 1].trim()
+          : "";
+      const sound: "endpoint" | "error" =
+        reason === "stt_error" || reason === "timeout" ? "error" : "endpoint";
+      this.overlay.set(
+        session.deviceId,
+        {
+          kind: "thinking",
+          ...(lastFinalText.length > 0 ? { caption: lastFinalText.slice(0, 240) } : {}),
+          sound,
+        },
+        {},
+        `terminate_${reason}:${initiator}`,
+      );
+    }
+
     if (reason === "endpoint") {
-      const cue: PlayCueMessage = { type: "play_cue", cue: "endpoint" };
-      this.sendToEar(session, cue);
       const finalText = session.finals.join(" ").trim() || session.partials.join(" ").trim();
       const finalMsg: FinalTranscriptMessage = {
         type: "final_transcript",

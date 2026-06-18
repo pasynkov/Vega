@@ -47,7 +47,7 @@ export class GraphFactory {
       ends: [...this.registry.listAll().map((s) => s.name as any), END as any],
     } as any);
     for (const spec of this.registry.listAll()) {
-      const node = makeSubAgentNode({ spec, llm: this.llm });
+      const node = makeSubAgentNode({ spec, llm: this.llm, logger: this.logger });
       graph.addNode(spec.name as any, node as any, {
         ends: ["supervisor" as any],
       } as any);

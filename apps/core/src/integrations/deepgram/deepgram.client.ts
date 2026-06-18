@@ -169,7 +169,7 @@ export class DeepgramClient {
         framesSent++;
         const now = Date.now();
         if (now - lastReportAt >= 2_000) {
-          this.logger.info(
+          this.logger.debug(
             {
               framesSent,
               bytesSent,

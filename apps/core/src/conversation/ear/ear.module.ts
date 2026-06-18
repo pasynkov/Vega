@@ -5,8 +5,10 @@ import { WakeCoordinator } from "./wake/wake-coordinator";
 import { SessionService } from "./session/session.service";
 import { DeepgramClient } from "../../integrations/deepgram/deepgram.client";
 import { RecordingStore } from "./recording/recording-store";
+import { OverlayModule } from "../overlay/overlay.module";
 
 @Module({
+  imports: [OverlayModule],
   providers: [
     EarGateway,
     EarRegistry,
@@ -15,7 +17,7 @@ import { RecordingStore } from "./recording/recording-store";
     DeepgramClient,
     RecordingStore,
   ],
-  exports: [SessionService, EarRegistry],
+  exports: [SessionService, EarRegistry, OverlayModule],
 })
 export class EarModule implements OnApplicationBootstrap, OnApplicationShutdown {
   constructor(

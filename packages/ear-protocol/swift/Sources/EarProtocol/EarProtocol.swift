@@ -34,6 +34,29 @@ public enum Cue: String, Codable, Sendable {
     case ackUnknown = "ack_unknown"
 }
 
+// Cues allowed inside `overlay_update.state.sound`. The `wake` cue is
+// played locally and never appears on the wire in this field.
+public enum OverlaySound: String, Codable, Sendable {
+    case endpoint
+    case error
+    case ackDone = "ack_done"
+    case ackContinue = "ack_continue"
+    case ackThinking = "ack_thinking"
+    case ackSuccess = "ack_success"
+    case ackError = "ack_error"
+    case ackUnknown = "ack_unknown"
+}
+
+public enum OverlayKind: String, Codable, Sendable {
+    case idle
+    case listening
+    case capturing
+    case thinking
+    case processing
+    case success
+    case error
+}
+
 public enum SessionMode: String, Codable, Sendable {
     case regular
     case continuous
@@ -180,14 +203,52 @@ public struct FinalTranscriptMessage: Codable, Sendable, Equatable {
     }
 }
 
-public struct PlayCueMessage: Codable, Sendable, Equatable {
-    public let type: String
-    public let cue: Cue
+public struct OverlayState: Codable, Sendable, Equatable {
+    public let kind: OverlayKind
+    public let hint: String?
+    public let caption: String?
+    public let sound: OverlaySound?
 
-    public init(cue: Cue) {
-        self.type = "play_cue"
-        self.cue = cue
+    public init(kind: OverlayKind, hint: String? = nil, caption: String? = nil, sound: OverlaySound? = nil) {
+        self.kind = kind
+        self.hint = hint
+        self.caption = caption
+        self.sound = sound
     }
+
+    enum CodingKeys: String, CodingKey {
+        case kind, hint, caption, sound
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(kind, forKey: .kind)
+        if let hint { try c.encode(hint, forKey: .hint) }
+        if let caption { try c.encode(caption, forKey: .caption) }
+        if let sound { try c.encode(sound, forKey: .sound) }
+    }
+}
+
+public struct OverlayUpdateMessage: Codable, Sendable, Equatable {
+    public let type: String
+    public let seq: Int
+    public let state: OverlayState
+
+    public init(seq: Int, state: OverlayState) {
+        self.type = "overlay_update"
+        self.seq = seq
+        self.state = state
+    }
+}
+
+// Raw overlay state used by the tolerance branch when `kind` or `sound`
+// is unknown. Preserves whatever text decoded so the Ear can still
+// render text alongside a fallback visual.
+public struct RawOverlayState: Sendable, Equatable {
+    public let rawKind: String
+    public let hint: String?
+    public let caption: String?
+    public let rawSound: String?
 }
 
 public struct ArmCaptureMessage: Codable, Sendable, Equatable {
@@ -250,11 +311,11 @@ public enum CoreToEarMessage: Sendable, Equatable {
     case wakeAck(WakeAckMessage)
     case partialTranscript(PartialTranscriptMessage)
     case finalTranscript(FinalTranscriptMessage)
-    case playCue(PlayCueMessage)
+    case overlayUpdate(OverlayUpdateMessage)
     case sessionMode(SessionModeChangeMessage)
     case armCapture(ArmCaptureMessage)
     case sessionEnd(CoreSessionEndMessage)
-    case unknownCue(rawCue: String)
+    case unknownOverlay(seq: Int, raw: RawOverlayState)
     case unknownSessionMode(rawMode: String)
 }
 
@@ -304,14 +365,32 @@ public struct EarProtocol {
             return .partialTranscript(try decoder.decode(PartialTranscriptMessage.self, from: data))
         case "final_transcript":
             return .finalTranscript(try decoder.decode(FinalTranscriptMessage.self, from: data))
-        case "play_cue":
-            // Tolerate unknown cue values so a newer Core does not break the WS.
+        case "overlay_update":
+            // Tolerate unknown overlay kind/sound values so a newer Core
+            // does not break the WS. Keep whatever text decoded.
             do {
-                return .playCue(try decoder.decode(PlayCueMessage.self, from: data))
+                return .overlayUpdate(try decoder.decode(OverlayUpdateMessage.self, from: data))
             } catch {
-                struct RawPlayCue: Decodable { let cue: String }
-                if let raw = try? decoder.decode(RawPlayCue.self, from: data) {
-                    return .unknownCue(rawCue: raw.cue)
+                struct RawOverlayEnvelope: Decodable {
+                    let seq: Int
+                    let state: RawState
+                    struct RawState: Decodable {
+                        let kind: String
+                        let hint: String?
+                        let caption: String?
+                        let sound: String?
+                    }
+                }
+                if let raw = try? decoder.decode(RawOverlayEnvelope.self, from: data) {
+                    return .unknownOverlay(
+                        seq: raw.seq,
+                        raw: RawOverlayState(
+                            rawKind: raw.state.kind,
+                            hint: raw.state.hint,
+                            caption: raw.state.caption,
+                            rawSound: raw.state.sound
+                        )
+                    )
                 }
                 throw error
             }

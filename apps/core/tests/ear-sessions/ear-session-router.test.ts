@@ -24,7 +24,8 @@ function makeRouter() {
   const list = vi.fn(() => [{ deviceId: "dev-1", socket: { send } as any }]);
   const registry = { list } as any;
   const sessions = makeStubSessions();
-  const router = new EarSessionRouter(new StubLogger() as any, registry, sessions);
+  const overlay = { set: () => true, cancelTtl: () => {}, bindDevice: () => {}, unbindDevice: () => {} } as any;
+  const router = new EarSessionRouter(new StubLogger() as any, registry, sessions, overlay);
   return { router, send, sessions };
 }
 
@@ -109,6 +110,7 @@ describe("EarSessionRouter", () => {
       new StubLogger() as any,
       { list: () => [] } as any,
       makeStubSessions(),
+      { set: () => true } as any,
     );
     const result = router.arm({ ownerSpec: spec, mode: "continuous" });
     expect(result.ok).toBe(false);

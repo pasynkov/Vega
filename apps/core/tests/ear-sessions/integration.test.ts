@@ -95,7 +95,7 @@ class StubStore {
 }
 
 interface CapturedFrame {
-  type: "json" | "session_end_msg" | "play_cue";
+  type: "json" | "session_end_msg" | "overlay_update";
   raw: string;
   parsed: any;
 }
@@ -133,15 +133,17 @@ function setupHarness(opts: { capMs: number; notesDir: string }) {
     earSessionPauseMs: 50,
   } as any;
 
+  const overlayStub = { set: () => true, cancelTtl: () => {}, bindDevice: () => {}, unbindDevice: () => {} } as any;
   const sessions = new SessionService(
     new StubLogger() as any,
     registry,
     env,
     new StubDeepgram() as any,
     new StubStore() as any,
+    overlayStub,
   );
 
-  const router = new EarSessionRouter(new StubLogger() as any, registry, sessions);
+  const router = new EarSessionRouter(new StubLogger() as any, registry, sessions, overlayStub);
   const llm = { getModel: () => ({} as any) } as any;
   const runner = new SessionAgentRunner(new StubLogger() as any, llm, env);
   const flushHooks = new FlushHookRegistry();
@@ -149,7 +151,7 @@ function setupHarness(opts: { capMs: number; notesDir: string }) {
   process.env.VEGA_NOTES_DIR = opts.notesDir;
   const storage = new NotesStorageService(new StubLogger() as any);
   const sessionSpecRef: { spec: AgentSpec | null } = { spec: null };
-  const { sessionTools } = buildNotesTools(storage, sessions, router, sessionSpecRef);
+  const { sessionTools } = buildNotesTools(storage, sessions, router, overlayStub, sessionSpecRef);
   const sessionSpec = buildNotesSessionSpec(sessionTools);
   sessionSpecRef.spec = sessionSpec;
 

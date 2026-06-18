@@ -4,6 +4,7 @@ import { LlmService } from "../../integrations/llm/llm.module";
 import { SessionService } from "../../conversation/ear/session/session.service";
 import { EarSessionRouter } from "../../conversation/sessions/ear-session-router.service";
 import { FlushHookRegistry } from "../../conversation/sessions/flush-hook-registry.service";
+import { OverlayService } from "../../conversation/overlay/overlay.service";
 import { NotesStorageService } from "./notes-storage.service";
 import { buildNotesTools } from "./notes.tools";
 import { buildNotesSessionSpec, buildNotesSupervisorSpec } from "./notes.agent";
@@ -21,12 +22,14 @@ export class NotesAgentService implements OnModuleInit {
     private readonly sessions: SessionService,
     private readonly router: EarSessionRouter,
     private readonly flushHooks: FlushHookRegistry,
+    private readonly overlay: OverlayService,
   ) {
     const sessionSpecRef: { spec: AgentSpec | null } = { spec: null };
     const { supervisorTools, sessionTools } = buildNotesTools(
       this.storage,
       this.sessions,
       this.router,
+      this.overlay,
       sessionSpecRef,
     );
     this.supervisorSpec = buildNotesSupervisorSpec(supervisorTools);
