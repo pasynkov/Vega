@@ -1,6 +1,7 @@
 import { Global, Module } from "@nestjs/common";
 import { SqliteSaver } from "@langchain/langgraph-checkpoint-sqlite";
 import { EnvConfig } from "../config/env";
+import { DbModule } from "../integrations/database/db.module";
 import { AgentSystemModule } from "./kernel/agent-system.module";
 import { SupervisorModule } from "./kernel/supervisor/supervisor.module";
 import { EarModule } from "./ear/ear.module";
@@ -25,7 +26,7 @@ const checkpointerProvider = {
 // naming any pipeline module in their own imports.
 @Global()
 @Module({
-  imports: [AgentSystemModule, SupervisorModule, EarModule, EarSessionsModule],
+  imports: [DbModule, AgentSystemModule, SupervisorModule, EarModule, EarSessionsModule],
   providers: [
     checkpointerProvider,
     GraphFactory,
