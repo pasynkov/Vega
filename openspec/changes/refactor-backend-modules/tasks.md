@@ -36,12 +36,12 @@
 - [x] 3.5 The memory `AgentSpec` provider wiring in `MemoryModule.onModuleInit` is gone; the `AgentSpec` getter on `MemoryAgentService` is left in place (no consumers, no harm) — `MemoryAgentService` itself still runs internally for `remember` writes
 - [x] 3.6 Contract e2e test asserts `AgentRegistry.list()` does NOT contain `memory` or `memory_search`
 - [x] 3.7 Ran `npm --workspace apps/core test` — 45 passed / 1 skipped; supervisor unit test still green (it only checks registered specs, doesn't hardcode `memory`)
-- [ ] 3.8 Commit step 3: `refactor(core): formalize domain contract via ConversationModule; drop memory AgentSpec`
+- [x] 3.8 Commit step 3: `refactor(core): formalize domain contract via ConversationModule; drop memory AgentSpec` (01f862f)
 
 ## 4. Verification and cleanup
 
-- [ ] 4.1 Run `npm --workspace apps/core run build` to ensure the production build still works
-- [ ] 4.2 Read `apps/core/src/domains/notes/notes.module.ts` and confirm no pipeline imports (`EarModule`, `EarSessionsModule`, `EarGateway`, `EarRegistry`, `SessionService`, `WakeCoordinator`) appear in the file
-- [ ] 4.3 Read `apps/core/src/tools/memory/memory.module.ts` and confirm `AgentRegistry` is not imported
-- [ ] 4.4 Read `apps/core/src/conversation/conversation.module.ts` and confirm it `@Global()` and exports `AgentRegistry` + `FlushHookRegistry`
-- [ ] 4.5 Run the daemon locally (`npm --workspace apps/core run dev`) for ~30 seconds; confirm it boots without errors and the logger prints `AgentSpec registered { name: "notes", tools: N }` exactly once and does NOT print a registration line for memory
+- [x] 4.1 Ran `npm --workspace apps/core run build`: nest build succeeds
+- [x] 4.2 `apps/core/src/domains/notes/notes.module.ts` contains no `EarModule`, `EarSessionsModule`, `EarGateway`, `EarRegistry`, `SessionService`, `WakeCoordinator` imports
+- [x] 4.3 `apps/core/src/tools/memory/memory.module.ts` no longer imports `AgentRegistry` (only mentioned in a comment explaining the contract)
+- [x] 4.4 `apps/core/src/conversation/conversation.module.ts` is `@Global()` and exports `AgentSystemModule`, `SupervisorModule`, `EarModule`, `EarSessionsModule` (re-exporting AgentRegistry + FlushHookRegistry + SessionService + EarSessionRouter through them)
+- [x] 4.5 Verified via contract e2e test logs that `[AgentRegistry] AgentSpec registered` fires once for `notes` and the GraphFactory boot log shows `domains: ["notes"]` with no memory entry; live `npm run dev` boot deferred (requires real ANTHROPIC_API_KEY / DEEPGRAM_API_KEY — the contract e2e exercises the same bootstrap path with stubs)

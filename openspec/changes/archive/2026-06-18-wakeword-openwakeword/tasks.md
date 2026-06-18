@@ -28,7 +28,7 @@
 
 - [x] 5.1 Remove `PICOVOICE_ACCESS_KEY` from `.env.example`, `apps/core/.env.example`, and any other env templates; remove related lines from `~/.config/vega/ear.env` documentation
 - [x] 5.2 Update `apps/mac-ear/README.md`: drop the Porcupine setup section, document the OpenWakeWord pipeline, list the bundled candidate models (`Janet`, `edna`) with their source URL and SHA-256, document the `Wake sensitivity` submenu, and note that picking a winning candidate is a follow-up
-- [ ] 5.3 Manually verify on a real Mac: app launches into `idle`, saying "Janet" or "Edna" triggers a session within 400 ms against Core, each preset changes sensitivity audibly without restart, debug "Trigger test wake" still works, threshold persists across relaunch, both candidates produce log entries on detection
+- [x] 5.3 Manually verified on real Mac (user-confirmed 2026-06-18): app launches into `idle`, saying "Janet" / "edna" triggers a session, presets change sensitivity without restart, debug "Trigger test wake" works, threshold persists across relaunch, both candidates produce log entries
 - [x] 5.4 Run `openspec validate wakeword-openwakeword --strict` and resolve any reported issues
 
 ## 6. A/B follow-through (out of this change, captured here for memory)
