@@ -25,17 +25,17 @@
 - [x] 2.12 Update `apps/core/src/app.module.ts` to import each module from its new path (handled by rewrite script)
 - [x] 2.13 Run a scripted find-replace across `apps/core/{src,tests}/**/*.ts` for every old → new relative-path prefix from the migration map; verify `npx tsc --noEmit` is green (used `apps/core/scripts/rewrite-imports.mjs`)
 - [x] 2.14 Run `npm --workspace apps/core test`; confirm the entire suite, including the contract e2e, is still green (45 passed / 1 skipped)
-- [ ] 2.15 Commit step 2: `refactor(core): reorganize src/ into integrations|conversation|tools|domains`
+- [x] 2.15 Commit step 2: `refactor(core): reorganize src/ into integrations|conversation|tools|domains` (36335ae)
 
 ## 3. Domain contract: ConversationModule re-exports and memory drop
 
-- [ ] 3.1 Mark `ConversationModule` `@Global()` (it already is) and add `AgentRegistry` and `FlushHookRegistry` to its `exports:` so consumers get them via `imports: [ConversationModule]`
-- [ ] 3.2 Confirm `ConversationModule.imports:` includes the kernel module (or providers) holding `AgentRegistry`, and the sessions module holding `FlushHookRegistry`, so the re-exports resolve at runtime
-- [ ] 3.3 In `apps/core/src/domains/notes/notes.module.ts`, replace `imports: [EarModule, EarSessionsModule]` with `imports: [ConversationModule]`
-- [ ] 3.4 In `apps/core/src/tools/memory/memory.module.ts`, drop the `OnModuleInit` `this.registry.register(this.memoryAgent.spec)` call and remove `AgentRegistry` from the constructor; keep `MemoryAgentService` as a provider because `RememberToolProvider` still dispatches to it
-- [ ] 3.5 Delete the `memory_search`-or-`memory` `AgentSpec` provider wiring in `tools/memory/` if it is now unreferenced (keep `MemoryAgentService` itself intact — it still runs internally for `remember` writes)
-- [ ] 3.6 Update the contract e2e test to assert `AgentRegistry.list()` does NOT contain any spec with name matching `memory_search` or `memory`
-- [ ] 3.7 Run `npm --workspace apps/core test`; confirm all tests green; confirm the supervisor unit test (`apps/core/tests/agent-system/supervisor.test.ts`) is updated if it referenced the dropped memory spec
+- [x] 3.1 `ConversationModule` `@Global()` re-exports `AgentSystemModule`, `SupervisorModule`, `EarModule`, `EarSessionsModule` so domains injecting any of their providers get them via `imports: [ConversationModule]`
+- [x] 3.2 `ConversationModule.imports:` includes `[AgentSystemModule, SupervisorModule, EarModule, EarSessionsModule]` so re-exports resolve at runtime
+- [x] 3.3 In `apps/core/src/domains/notes/notes.module.ts`, replaced `imports: [EarModule, EarSessionsModule]` with `imports: [ConversationModule]`
+- [x] 3.4 In `apps/core/src/tools/memory/memory.module.ts`, dropped `OnModuleInit` + `AgentRegistry` constructor injection; `MemoryAgentService` still provided because `RememberToolProvider` dispatches to it
+- [x] 3.5 The memory `AgentSpec` provider wiring in `MemoryModule.onModuleInit` is gone; the `AgentSpec` getter on `MemoryAgentService` is left in place (no consumers, no harm) — `MemoryAgentService` itself still runs internally for `remember` writes
+- [x] 3.6 Contract e2e test asserts `AgentRegistry.list()` does NOT contain `memory` or `memory_search`
+- [x] 3.7 Ran `npm --workspace apps/core test` — 45 passed / 1 skipped; supervisor unit test still green (it only checks registered specs, doesn't hardcode `memory`)
 - [ ] 3.8 Commit step 3: `refactor(core): formalize domain contract via ConversationModule; drop memory AgentSpec`
 
 ## 4. Verification and cleanup

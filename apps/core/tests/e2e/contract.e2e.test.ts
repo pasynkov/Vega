@@ -137,39 +137,48 @@ class StubDeepgram {
 }
 
 class StubDb {
-  private _ds: DataSource | null = null;
+  private _ds: DataSource;
 
-  async onModuleInit(): Promise<void> {
+  constructor() {
     this._ds = new DataSource({
       type: "better-sqlite3",
       database: dbPath,
       entities: [Memory, ConversationSessionRow],
       synchronize: true,
     });
-    await this._ds.initialize();
+  }
+
+  async onModuleInit(): Promise<void> {
+    if (!this._ds.isInitialized) await this._ds.initialize();
   }
 
   async onApplicationShutdown(): Promise<void> {
-    if (this._ds?.isInitialized) await this._ds.destroy();
+    if (this._ds.isInitialized) await this._ds.destroy();
   }
 
   get dataSource(): DataSource {
-    if (!this._ds) throw new Error("StubDb accessed before onModuleInit");
     return this._ds;
   }
+}
+
+async function makeStubDb(): Promise<StubDb> {
+  const db = new StubDb();
+  await db.onModuleInit();
+  return db;
 }
 
 describe("Contract E2E: AppModule bootstrap, registry contract, short-note turn", () => {
   let app: INestApplicationContext;
 
   beforeAll(async () => {
+    const stubDb = await makeStubDb();
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(EarGateway)
       .useValue(new StubGateway())
       .overrideProvider(DeepgramClient)
       .useValue(new StubDeepgram())
       .overrideProvider(DbService)
-      .useValue(new StubDb())
+      .useValue(stubDb)
       .compile();
     app = await moduleRef.init();
   }, 30_000);
@@ -191,10 +200,11 @@ describe("Contract E2E: AppModule bootstrap, registry contract, short-note turn"
     expect(hook).toBeTruthy();
   });
 
-  it("AgentRegistry contains the memory domain before the memory refactor", () => {
+  it("AgentRegistry does NOT contain the memory spec after the memory refactor", () => {
     const registry = app.get(AgentRegistry);
     const names = registry.listAll().map((s) => s.name);
-    expect(names).toContain("memory");
+    expect(names).not.toContain("memory");
+    expect(names).not.toContain("memory_search");
   });
 
   it("ConversationService.handleTurn returns outcome=acted for a short-note request", async () => {

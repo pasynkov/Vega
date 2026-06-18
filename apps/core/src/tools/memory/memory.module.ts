@@ -1,5 +1,4 @@
-import { Global, Module, OnModuleInit } from "@nestjs/common";
-import { AgentRegistry } from "../../conversation/kernel/agent-registry.service";
+import { Global, Module } from "@nestjs/common";
 import { MEMORY_SEARCH_PORT } from "../../conversation/kernel/supervisor/memory-search.port";
 import { MemoryService } from "./memory.service";
 import { MemoryAgentService } from "./memory-agent.service";
@@ -10,6 +9,11 @@ const memorySearchPortProvider = {
   useExisting: MemoryService,
 };
 
+// Memory is a tool, not a domain. It does NOT register an AgentSpec with
+// AgentRegistry, so the supervisor cannot route to it. RememberToolProvider
+// is injected by other domains' tools to persist facts; MemoryAgentService
+// still runs internally to mediate dedup-aware writes triggered by the
+// rememberTool's fire-and-forget dispatch.
 @Global()
 @Module({
   providers: [
@@ -25,13 +29,4 @@ const memorySearchPortProvider = {
     MEMORY_SEARCH_PORT,
   ],
 })
-export class MemoryModule implements OnModuleInit {
-  constructor(
-    private readonly registry: AgentRegistry,
-    private readonly memoryAgent: MemoryAgentService,
-  ) {}
-
-  onModuleInit(): void {
-    this.registry.register(this.memoryAgent.spec);
-  }
-}
+export class MemoryModule {}

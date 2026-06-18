@@ -65,8 +65,9 @@ Both `AgentRegistry` and `FlushHookRegistry` SHALL be obtained by the domain mod
 
 #### Scenario: A domain module attempts to reach into the ear pipeline directly
 
-- **WHEN** a code-review reviewer reads a domain module's source file and sees an `import` of `EarModule`, `EarSessionsModule`, `SessionService`, `EarGateway`, `EarRegistry`, or `WakeCoordinator`
+- **WHEN** a code-review reviewer reads a domain module's source file and sees `EarModule`, `EarSessionsModule`, `AgentSystemModule`, or `SupervisorModule` listed inside the module's `@Module({ imports: [...] })` array
 - **THEN** the reviewer SHALL reject the change as a violation of this requirement
+- **AND** the domain module SHALL be rewritten to declare `imports: [ConversationModule]` instead — type-only TypeScript imports of specific service classes (used to declare constructor parameter types) are not a violation
 
 ### Requirement: A contract end-to-end test SHALL verify the domain-registration wiring at boot
 
