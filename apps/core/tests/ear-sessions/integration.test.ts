@@ -275,8 +275,11 @@ describe("Tool-driven Ear session integration", () => {
         capMs: 200,
         notesDir: tmpDir,
       });
-      router.arm({ ownerSpec: sessionSpec, mode: "continuous" });
-      startSession(sessions, conn, "continuous");
+      // Use regular mode so env.earSessionOwnerCapMs is honored by the
+      // runner; the continuous-mode path has a much larger hard-coded
+      // wall-clock backstop because the user is actively dictating.
+      router.arm({ ownerSpec: sessionSpec, mode: "regular" });
+      startSession(sessions, conn, "regular");
 
       const internal: any = (sessions as any).bySessionId.get(SESSION_ID);
       (sessions as any).onFinal(internal, "идея один", 0.9);

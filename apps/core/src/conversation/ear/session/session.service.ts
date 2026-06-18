@@ -51,6 +51,10 @@ interface InFlightSession extends SessionRecord {
 
 const CORE_SILENCE_CAP_MS = 5_000;
 export const CONTINUOUS_MODE_SILENCE_CAP_MS = 60_000;
+// Wall-clock backstop for continuous sessions. Silence cap (60 s,
+// resets on activity) is the real "user stopped talking" signal. This
+// is just the last-resort backstop for a runaway stuck stream.
+export const CONTINUOUS_MODE_MAX_WALL_CLOCK_MS = 60 * 60 * 1_000;
 
 @Injectable()
 export class SessionService {
@@ -197,14 +201,16 @@ export class SessionService {
       shortId,
       deepgram: null,
       // Wall-clock backstop. Regular sessions die after sessionTimeoutMs
-      // (30 s default). Long-note sessions need a much larger cap because the
-      // user is actively dictating; sessionTimeoutMs would kill the dictation
-      // mid-stream. Align with earSessionOwnerCapMs (90 s default) which the
-      // SessionAgentRunner already uses as its owner cap.
+      // (30 s default). Continuous sessions need a much larger cap because
+      // the user is actively dictating; sessionTimeoutMs and even
+      // earSessionOwnerCapMs (90 s) would kill the dictation mid-stream.
+      // The real "user is done" signal is the silence cap (60 s,
+      // resets on every partial / final). This wall-clock is just the
+      // last-resort backstop for a runaway stuck Deepgram stream.
       timeout: setTimeout(
         () => this.handleTimeout(message.sessionId),
         initialMode === "continuous"
-          ? this.env.earSessionOwnerCapMs
+          ? CONTINUOUS_MODE_MAX_WALL_CLOCK_MS
           : this.env.sessionTimeoutMs,
       ),
       silenceTimer: null,

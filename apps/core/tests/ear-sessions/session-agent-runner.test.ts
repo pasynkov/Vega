@@ -146,8 +146,12 @@ describe("SessionAgentRunner", () => {
     const runner = makeRunner({ capMs: 50, pauseMs: 60_000 });
     const onRelease = vi.fn();
     const onFlush = vi.fn();
+    // Use a regular-mode handle so env.earSessionOwnerCapMs is honored.
+    // Continuous-mode runners use a much larger hard-coded backstop
+    // because the user is actively dictating; the regular flow is the
+    // right one to test the cap mechanism itself.
     runner.start({
-      handle,
+      handle: { ...handle, mode: "regular" },
       spec,
       initialPrompt: "boot",
       callbacks: { onRelease, onFlush, onFinalAppend: vi.fn() },

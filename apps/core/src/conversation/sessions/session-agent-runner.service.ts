@@ -81,13 +81,23 @@ export class SessionAgentRunner {
       terminalQueued: null,
     };
 
-    state.safetyTimer = setTimeout(() => this.onSafetyCap(state), this.env.earSessionOwnerCapMs);
+    // Wall-clock cap on the owning sub-agent loop. For continuous-mode
+    // sessions the user can legitimately dictate for many minutes; the
+    // earSessionOwnerCapMs default (90 s) would kill an active dictation.
+    // The silence cap and the sub-agent's own finalize/discard tool
+    // decisions are the real lifecycle drivers; this is the runaway
+    // backstop only.
+    const wallClockMs = args.handle.mode === "continuous"
+      ? 60 * 60 * 1_000
+      : this.env.earSessionOwnerCapMs;
+    state.safetyTimer = setTimeout(() => this.onSafetyCap(state), wallClockMs);
 
     this.logger.info(
       {
         sessionId: state.handle.sessionId,
         owner: args.spec.name,
-        ownerCapMs: this.env.earSessionOwnerCapMs,
+        ownerCapMs: wallClockMs,
+        mode: args.handle.mode,
         pauseMs: state.pauseMs,
       },
       "Session agent runner started",
