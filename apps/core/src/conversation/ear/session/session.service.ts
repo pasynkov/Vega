@@ -185,7 +185,17 @@ export class SessionService {
       sampleRate: message.sampleRate,
       shortId,
       deepgram: null,
-      timeout: setTimeout(() => this.handleTimeout(message.sessionId), this.env.sessionTimeoutMs),
+      // Wall-clock backstop. Regular sessions die after sessionTimeoutMs
+      // (30 s default). Long-note sessions need a much larger cap because the
+      // user is actively dictating; sessionTimeoutMs would kill the dictation
+      // mid-stream. Align with earSessionOwnerCapMs (90 s default) which the
+      // SessionAgentRunner already uses as its owner cap.
+      timeout: setTimeout(
+        () => this.handleTimeout(message.sessionId),
+        initialMode === "long_note"
+          ? this.env.earSessionOwnerCapMs
+          : this.env.sessionTimeoutMs,
+      ),
       silenceTimer: null,
       silenceCapMs: initialCap,
       vad: new SilenceDetector(undefined, (msg, meta) => {
