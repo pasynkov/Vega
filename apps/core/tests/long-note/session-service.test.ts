@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SessionService, LONG_NOTE_SILENCE_CAP_MS } from "../../src/session/session.service";
+import { SessionService, LONG_NOTE_SILENCE_CAP_MS } from "../../src/conversation/ear/session/session.service";
 
 class StubLogger {
   info() {}

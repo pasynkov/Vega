@@ -1,9 +1,9 @@
 import "reflect-metadata";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionStartMessage } from "@vega/ear-protocol";
-import { EarSessionRouter } from "../../src/ear-sessions/ear-session-router.service";
-import { EarSessionReservationConflictError } from "../../src/ear-sessions/ear-session.errors";
-import type { AgentSpec } from "../../src/agents/agent.types";
+import { EarSessionRouter } from "../../src/conversation/sessions/ear-session-router.service";
+import { EarSessionReservationConflictError } from "../../src/conversation/sessions/ear-session.errors";
+import type { AgentSpec } from "../../src/conversation/kernel/agent.types";
 
 class StubLogger {
   info() {}

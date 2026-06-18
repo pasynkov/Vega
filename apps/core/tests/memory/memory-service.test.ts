@@ -1,8 +1,8 @@
 import "reflect-metadata";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DataSource } from "typeorm";
-import { Memory } from "../../src/memory/memory.entity";
-import { MemoryService } from "../../src/memory/memory.service";
+import { Memory } from "../../src/tools/memory/memory.entity";
+import { MemoryService } from "../../src/tools/memory/memory.service";
 
 function makeStubDb(ds: DataSource) {
   return {

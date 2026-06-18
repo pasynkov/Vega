@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
 import type { BaseMessage } from "@langchain/core/messages";
-import { GraphFactory } from "../agents/graph.factory";
+import { GraphFactory } from "./kernel/graph.factory";
 import { SessionRegistry } from "./session-registry.service";
 
 const FALLBACK_REPLY = "";

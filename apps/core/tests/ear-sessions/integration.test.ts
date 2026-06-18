@@ -64,15 +64,15 @@ vi.mock("@langchain/langgraph/prebuilt", () => ({
   createReactAgent: mocks.factory,
 }));
 
-import { EarSessionRouter } from "../../src/ear-sessions/ear-session-router.service";
-import { SessionAgentRunner } from "../../src/ear-sessions/session-agent-runner.service";
-import { FlushHookRegistry } from "../../src/ear-sessions/flush-hook-registry.service";
-import type { EarSessionHandle } from "../../src/ear-sessions/ear-session-handle";
-import { NotesStorageService } from "../../src/notes/notes-storage.service";
-import { buildNotesTools } from "../../src/notes/notes.tools";
-import { buildNotesSessionSpec } from "../../src/notes/notes.agent";
-import { SessionService } from "../../src/session/session.service";
-import type { AgentSpec } from "../../src/agents/agent.types";
+import { EarSessionRouter } from "../../src/conversation/sessions/ear-session-router.service";
+import { SessionAgentRunner } from "../../src/conversation/sessions/session-agent-runner.service";
+import { FlushHookRegistry } from "../../src/conversation/sessions/flush-hook-registry.service";
+import type { EarSessionHandle } from "../../src/conversation/sessions/ear-session-handle";
+import { NotesStorageService } from "../../src/domains/notes/notes-storage.service";
+import { buildNotesTools } from "../../src/domains/notes/notes.tools";
+import { buildNotesSessionSpec } from "../../src/domains/notes/notes.agent";
+import { SessionService } from "../../src/conversation/ear/session/session.service";
+import type { AgentSpec } from "../../src/conversation/kernel/agent.types";
 
 class StubLogger {
   info() {}

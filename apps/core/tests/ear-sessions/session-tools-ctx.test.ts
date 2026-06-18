@@ -1,8 +1,8 @@
 import "reflect-metadata";
 import { describe, expect, it, vi } from "vitest";
-import { buildNotesTools } from "../../src/notes/notes.tools";
-import { ToolUsedOutsideSessionError } from "../../src/ear-sessions/ear-session.errors";
-import type { AgentSpec, AgentTool } from "../../src/agents/agent.types";
+import { buildNotesTools } from "../../src/domains/notes/notes.tools";
+import { ToolUsedOutsideSessionError } from "../../src/conversation/sessions/ear-session.errors";
+import type { AgentSpec, AgentTool } from "../../src/conversation/kernel/agent.types";
 
 function makeStubs() {
   const storage = {

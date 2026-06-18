@@ -111,13 +111,13 @@ import type { INestApplicationContext } from "@nestjs/common";
 import { DataSource } from "typeorm";
 
 import { AppModule } from "../../src/app.module";
-import { EarGateway } from "../../src/ear/ear.gateway";
-import { DeepgramClient } from "../../src/deepgram/deepgram.client";
-import { DbService } from "../../src/db/db.module";
-import { AgentRegistry } from "../../src/agents/agent-registry.service";
-import { FlushHookRegistry } from "../../src/ear-sessions/flush-hook-registry.service";
+import { EarGateway } from "../../src/conversation/ear/ear.gateway";
+import { DeepgramClient } from "../../src/integrations/deepgram/deepgram.client";
+import { DbService } from "../../src/integrations/database/db.module";
+import { AgentRegistry } from "../../src/conversation/kernel/agent-registry.service";
+import { FlushHookRegistry } from "../../src/conversation/sessions/flush-hook-registry.service";
 import { ConversationService } from "../../src/conversation/conversation.service";
-import { Memory } from "../../src/memory/memory.entity";
+import { Memory } from "../../src/tools/memory/memory.entity";
 import { ConversationSessionRow } from "../../src/conversation/session.entity";
 
 class StubGateway {

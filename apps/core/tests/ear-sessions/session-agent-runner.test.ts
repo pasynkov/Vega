@@ -14,9 +14,9 @@ vi.mock("@langchain/langgraph/prebuilt", () => ({
   createReactAgent: mocks.createReactAgentMock,
 }));
 
-import { SessionAgentRunner } from "../../src/ear-sessions/session-agent-runner.service";
-import type { EarSessionHandle } from "../../src/ear-sessions/ear-session-handle";
-import type { AgentSpec } from "../../src/agents/agent.types";
+import { SessionAgentRunner } from "../../src/conversation/sessions/session-agent-runner.service";
+import type { EarSessionHandle } from "../../src/conversation/sessions/ear-session-handle";
+import type { AgentSpec } from "../../src/conversation/kernel/agent.types";
 
 class StubLogger {
   info() {}

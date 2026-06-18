@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { describe, expect, it } from "vitest";
 import { IsString, MinLength } from "class-validator";
-import { makeTool, buildJsonSchema, assertToolSchemasValid, ToolValidationError } from "../../src/agents/tool-factory";
+import { makeTool, buildJsonSchema, assertToolSchemasValid, ToolValidationError } from "../../src/conversation/kernel/tool-factory";
 
 class EchoDto {
   @IsString()

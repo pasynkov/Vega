@@ -99,19 +99,19 @@ vi.mock("@langchain/langgraph/prebuilt", () => ({
   createReactAgent: mocks.factory,
 }));
 
-import { GraphFactory } from "../../src/agents/graph.factory";
-import { AgentRegistry } from "../../src/agents/agent-registry.service";
-import { PreSupervisorNode } from "../../src/agents/supervisor/pre-supervisor.node";
-import { SupervisorNode } from "../../src/agents/supervisor/supervisor.node";
-import { EarSessionRouter } from "../../src/ear-sessions/ear-session-router.service";
-import { SessionAgentRunner } from "../../src/ear-sessions/session-agent-runner.service";
-import { FlushHookRegistry } from "../../src/ear-sessions/flush-hook-registry.service";
-import { NotesStorageService } from "../../src/notes/notes-storage.service";
-import { buildNotesTools } from "../../src/notes/notes.tools";
-import { buildNotesSupervisorSpec, buildNotesSessionSpec } from "../../src/notes/notes.agent";
-import type { AgentSpec } from "../../src/agents/agent.types";
-import { SessionService } from "../../src/session/session.service";
-import type { EarSessionHandle } from "../../src/ear-sessions/ear-session-handle";
+import { GraphFactory } from "../../src/conversation/kernel/graph.factory";
+import { AgentRegistry } from "../../src/conversation/kernel/agent-registry.service";
+import { PreSupervisorNode } from "../../src/conversation/kernel/supervisor/pre-supervisor.node";
+import { SupervisorNode } from "../../src/conversation/kernel/supervisor/supervisor.node";
+import { EarSessionRouter } from "../../src/conversation/sessions/ear-session-router.service";
+import { SessionAgentRunner } from "../../src/conversation/sessions/session-agent-runner.service";
+import { FlushHookRegistry } from "../../src/conversation/sessions/flush-hook-registry.service";
+import { NotesStorageService } from "../../src/domains/notes/notes-storage.service";
+import { buildNotesTools } from "../../src/domains/notes/notes.tools";
+import { buildNotesSupervisorSpec, buildNotesSessionSpec } from "../../src/domains/notes/notes.agent";
+import type { AgentSpec } from "../../src/conversation/kernel/agent.types";
+import { SessionService } from "../../src/conversation/ear/session/session.service";
+import type { EarSessionHandle } from "../../src/conversation/sessions/ear-session-handle";
 
 class StubLogger {
   info() {}

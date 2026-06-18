@@ -7,24 +7,24 @@
 - [x] 1.5 In the contract test: assert `app.get(FlushHookRegistry).get("notes-session")` returns a non-null hook
 - [x] 1.6 In the contract test: call `app.get(ConversationService).handleTurn(sessionId, "купить молоко")` and assert the returned `outcome === "acted"`
 - [x] 1.7 Run `npm --workspace apps/core test`; confirm the new e2e test and the entire existing suite are green (45 passed / 1 skipped)
-- [ ] 1.8 Commit baseline: `test(core): contract e2e for domain registration and short-note turn`
+- [x] 1.8 Commit baseline: `test(core): contract e2e for domain registration and short-note turn` (82ee692)
 
 ## 2. File moves and import-path rewrites (paths-only, no behavior change)
 
-- [ ] 2.1 `git mv apps/core/src/db apps/core/src/integrations/database` (create the `integrations/` directory in the same commit)
-- [ ] 2.2 `git mv apps/core/src/llm apps/core/src/integrations/llm`
-- [ ] 2.3 `git mv apps/core/src/deepgram apps/core/src/integrations/deepgram`
-- [ ] 2.4 `git mv apps/core/src/agents apps/core/src/conversation/kernel` (preserves the `supervisor/` sub-tree)
-- [ ] 2.5 `git mv apps/core/src/wake apps/core/src/conversation/ear/wake`
-- [ ] 2.6 `git mv apps/core/src/session apps/core/src/conversation/ear/session`
-- [ ] 2.7 `git mv apps/core/src/recording apps/core/src/conversation/ear/recording`
-- [ ] 2.8 `git mv` the loose files in `apps/core/src/ear/` (gateway, registry) one level so they sit at `apps/core/src/conversation/ear/` next to the moved `session/recording/wake/` subdirs
-- [ ] 2.9 `git mv apps/core/src/ear-sessions apps/core/src/conversation/sessions`
-- [ ] 2.10 `git mv apps/core/src/memory apps/core/src/tools/memory`
-- [ ] 2.11 `git mv apps/core/src/notes apps/core/src/domains/notes`
-- [ ] 2.12 Update `apps/core/src/app.module.ts` to import each module from its new path
-- [ ] 2.13 Run a scripted find-replace across `apps/core/{src,tests}/**/*.ts` for every old → new relative-path prefix from the migration map; verify `npx tsc --noEmit` is green
-- [ ] 2.14 Run `npm --workspace apps/core test`; confirm the entire suite, including the contract e2e, is still green
+- [x] 2.1 `git mv apps/core/src/db apps/core/src/integrations/database` (create the `integrations/` directory in the same commit)
+- [x] 2.2 `git mv apps/core/src/llm apps/core/src/integrations/llm`
+- [x] 2.3 `git mv apps/core/src/deepgram apps/core/src/integrations/deepgram`
+- [x] 2.4 `git mv apps/core/src/agents apps/core/src/conversation/kernel` (preserves the `supervisor/` sub-tree)
+- [x] 2.5 `git mv apps/core/src/wake apps/core/src/conversation/ear/wake`
+- [x] 2.6 `git mv apps/core/src/session apps/core/src/conversation/ear/session`
+- [x] 2.7 `git mv apps/core/src/recording apps/core/src/conversation/ear/recording`
+- [x] 2.8 `git mv` the loose files in `apps/core/src/ear/` (gateway, registry, module) one level so they sit at `apps/core/src/conversation/ear/` next to the moved `session/recording/wake/` subdirs
+- [x] 2.9 `git mv apps/core/src/ear-sessions apps/core/src/conversation/sessions`
+- [x] 2.10 `git mv apps/core/src/memory apps/core/src/tools/memory`
+- [x] 2.11 `git mv apps/core/src/notes apps/core/src/domains/notes`
+- [x] 2.12 Update `apps/core/src/app.module.ts` to import each module from its new path (handled by rewrite script)
+- [x] 2.13 Run a scripted find-replace across `apps/core/{src,tests}/**/*.ts` for every old → new relative-path prefix from the migration map; verify `npx tsc --noEmit` is green (used `apps/core/scripts/rewrite-imports.mjs`)
+- [x] 2.14 Run `npm --workspace apps/core test`; confirm the entire suite, including the contract e2e, is still green (45 passed / 1 skipped)
 - [ ] 2.15 Commit step 2: `refactor(core): reorganize src/ into integrations|conversation|tools|domains`
 
 ## 3. Domain contract: ConversationModule re-exports and memory drop

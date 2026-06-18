@@ -1,7 +1,7 @@
 import { Global, Module } from "@nestjs/common";
 import { SqliteSaver } from "@langchain/langgraph-checkpoint-sqlite";
 import { EnvConfig } from "../config/env";
-import { GraphFactory, CHECKPOINTER } from "../agents/graph.factory";
+import { GraphFactory, CHECKPOINTER } from "./kernel/graph.factory";
 import { ConversationService } from "./conversation.service";
 import { SessionRegistry } from "./session-registry.service";
 

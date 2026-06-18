@@ -7,11 +7,11 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { LoggerModule } from "nestjs-pino";
 import { EnvConfigModule } from "../../src/config/env.module";
 import { EnvConfig } from "../../src/config/env";
-import { DbModule } from "../../src/db/db.module";
-import { LlmModule } from "../../src/llm/llm.module";
-import { AgentSystemModule } from "../../src/agents/agent-system.module";
-import { SupervisorModule } from "../../src/agents/supervisor/supervisor.module";
-import { MemoryModule } from "../../src/memory/memory.module";
+import { DbModule } from "../../src/integrations/database/db.module";
+import { LlmModule } from "../../src/integrations/llm/llm.module";
+import { AgentSystemModule } from "../../src/conversation/kernel/agent-system.module";
+import { SupervisorModule } from "../../src/conversation/kernel/supervisor/supervisor.module";
+import { MemoryModule } from "../../src/tools/memory/memory.module";
 import { ConversationModule } from "../../src/conversation/conversation.module";
 import { ConversationService } from "../../src/conversation/conversation.service";
 

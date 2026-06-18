@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { RecordingStore, SessionRecord } from "../src/recording/recording-store";
+import { RecordingStore, SessionRecord } from "../src/conversation/ear/recording/recording-store";
 
 class StubLogger {
   info() {}

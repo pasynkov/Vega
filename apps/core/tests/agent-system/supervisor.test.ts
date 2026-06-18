@@ -2,7 +2,7 @@ import "reflect-metadata";
 import { describe, expect, it } from "vitest";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import { END } from "@langchain/langgraph";
-import { SupervisorNode } from "../../src/agents/supervisor/supervisor.node";
+import { SupervisorNode } from "../../src/conversation/kernel/supervisor/supervisor.node";
 
 class StubLogger {
   info() {}

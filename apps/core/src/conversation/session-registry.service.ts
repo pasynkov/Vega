@@ -1,6 +1,6 @@
 import { Injectable, OnModuleInit } from "@nestjs/common";
 import { Repository } from "typeorm";
-import { DbService } from "../db/db.module";
+import { DbService } from "../integrations/database/db.module";
 import { ConversationSessionRow } from "./session.entity";
 
 export interface SessionMetadata {
