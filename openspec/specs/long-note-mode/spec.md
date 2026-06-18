@@ -2,11 +2,11 @@
 
 ## Purpose
 
-Defines the `long_note` session mode: a long-form dictation flow where the Ear opens a fresh capture session with a relaxed silence cap and the orchestration runtime owns the session lifecycle. Owns the cap semantics, the supervisor-visible notes tools that arm/terminate long-note sessions, and the safety backstops that bound a runaway dictation.
+Defines the `continuous` session mode: a long-form dictation flow where the Ear opens a fresh capture session with a relaxed silence cap and the orchestration runtime owns the session lifecycle. Owns the cap semantics, the supervisor-visible notes tools that arm/terminate long-note sessions, and the safety backstops that bound a runaway dictation.
 ## Requirements
 ### Requirement: Long-note session mode
 
-The system SHALL support a session mode `long_note` distinct from the default `regular` mode. Each session is created under exactly one mode at start and SHALL NOT transition modes mid-session. A wake-word event always opens a `regular` session. Long-note sessions are opened by Core via the `arm_capture` message after the original short utterance has closed and an LLM-decided tool fires.
+The system SHALL support a session mode `continuous` distinct from the default `regular` mode. Each session is created under exactly one mode at start and SHALL NOT transition modes mid-session. A wake-word event always opens a `regular` session. Long-note sessions are opened by Core via the `arm_capture` message after the original short utterance has closed and an LLM-decided tool fires.
 
 Detailed contracts (exact silence cap milliseconds, exact safety cap milliseconds, exact LLM prompts, idempotency keys) are intentionally left to implementation. The values below are anchors; implementation MAY tighten them but SHALL preserve their relative ordering and intent.
 
@@ -18,17 +18,17 @@ Detailed contracts (exact silence cap milliseconds, exact safety cap millisecond
 
 #### Scenario: Long-note session is opened by Core via arm_capture
 
-- **WHEN** the `enable_long_note_mode` tool runs successfully (because the supervisor decided the user wants to dictate a long note)
-- **THEN** Core SHALL send an `arm_capture` message to the connected Ear with `mode: "long_note"`
+- **WHEN** the `enable_continuous_mode` tool runs successfully (because the supervisor decided the user wants to dictate a long note)
+- **THEN** Core SHALL send an `arm_capture` message to the connected Ear with `mode: "continuous"`
 - **AND** the Ear SHALL play the `ack_continue` cue (Submarine)
-- **AND** the Ear SHALL open a FRESH capture session under `long_note` mode (no wake event required)
-- **AND** the new session's `session_start` SHALL carry `mode: "long_note"` so Core arms the right cap and suppresses Core-side VAD endpoint from the start
+- **AND** the Ear SHALL open a FRESH capture session under `continuous` mode (no wake event required)
+- **AND** the new session's `session_start` SHALL carry `mode: "continuous"` so Core arms the right cap and suppresses Core-side VAD endpoint from the start
 
 #### Scenario: Mode is immutable per session
 
 - **WHEN** a long-note session is in progress
 - **THEN** no tool, no message, and no transcript content SHALL transition the session back to `regular` mode
-- **AND** the only valid exits from `long_note` SHALL be termination via `end_long_note_mode`, the long-note safety cap, or an unhandled transport error
+- **AND** the only valid exits from `continuous` SHALL be termination via `end_continuous_mode`, the long-note safety cap, or an unhandled transport error
 
 ### Requirement: Notes domain tools
 
@@ -36,7 +36,7 @@ The notes domain SHALL expose the following tools to the orchestration graph and
 
 - **Supervisor-visible**:
   - `save_short_note(text)`: persist a short note in the post-endpoint flow. Side effect: writes to disk under `output/notes/`. Returned cue: `ack_done`.
-  - `begin_dictation()`: reserve the next Ear session via `EarSessionRouter.arm({ ownerSpec: notesAgentSpec, mode: "long_note" })` and return the dispatch result. Replaces `enable_long_note_mode`. Returns success/failure of the arm dispatch. The Submarine cue is played by the Ear on receipt of `arm_capture`.
+  - `open_continuous_session()`: reserve the next Ear session via `EarSessionRouter.arm({ ownerSpec: notesAgentSpec, mode: "continuous" })` and return the dispatch result. Replaces `enable_continuous_mode`. Returns success/failure of the arm dispatch. The Submarine cue is played by the Ear on receipt of `arm_capture`.
 
 - **Session-bound only (visible to the notes sub-agent inside `runSessionAgent`, NOT to the supervisor)**:
   - `append_text(text)`: append the supplied chunk to the in-progress note file. Idempotent on identical consecutive calls.
@@ -45,7 +45,7 @@ The notes domain SHALL expose the following tools to the orchestration graph and
 
 Persistence path SHALL remain `output/notes/YYYY-MM-DD_HH-mm-ss.md` with one file per note. The directory SHALL be created lazily on first save and SHALL be excluded from version control.
 
-The in-progress note file SHALL be opened when the first session-bound final is received (not at `begin_dictation` time) so an aborted reservation does not leave empty files behind.
+The in-progress note file SHALL be opened when the first session-bound final is received (not at `open_continuous_session` time) so an aborted reservation does not leave empty files behind.
 
 #### Scenario: Short-note path
 
@@ -53,11 +53,11 @@ The in-progress note file SHALL be opened when the first session-bound final is 
 - **THEN** a file SHALL be written under `output/notes/`
 - **AND** the Ear SHALL play the `ack_done` cue
 
-#### Scenario: begin_dictation arms a session
+#### Scenario: open_continuous_session arms a session
 
-- **WHEN** the supervisor calls `begin_dictation`
+- **WHEN** the supervisor calls `open_continuous_session`
 - **THEN** the tool SHALL reserve the next Ear session via `EarSessionRouter`
-- **AND** SHALL dispatch `arm_capture` with `mode: "long_note"`
+- **AND** SHALL dispatch `arm_capture` with `mode: "continuous"`
 - **AND** SHALL NOT itself open or write any file under `output/notes/`
 
 #### Scenario: Streaming append during dictation
@@ -82,7 +82,7 @@ The in-progress note file SHALL be opened when the first session-bound final is 
 
 ### Requirement: Long-note safety cap
 
-A session in `long_note` mode SHALL terminate after a configurable hard cap measured from the last partial OR final transcript, regardless of whether the owning sub-agent ever decides to release. This Core-side silence cap SHALL be enforced by the existing session pipeline. The Ear-side safety timer remains an independent backstop, and the `tool-driven-ear-sessions` owner safety cap (wall-clock from `session_start`) SHALL act as a third backstop. Any of the three firing SHALL end the session.
+A session in `continuous` mode SHALL terminate after a configurable hard cap measured from the last partial OR final transcript, regardless of whether the owning sub-agent ever decides to release. This Core-side silence cap SHALL be enforced by the existing session pipeline. The Ear-side safety timer remains an independent backstop, and the `tool-driven-ear-sessions` owner safety cap (wall-clock from `session_start`) SHALL act as a third backstop. Any of the three firing SHALL end the session.
 
 When the Core silence cap fires on an owned session, ownership SHALL be force-released and the owning domain's on-cap flush hook SHALL run so whatever transcript was accumulated is saved (the notes domain SHALL save the current in-progress file as-is).
 

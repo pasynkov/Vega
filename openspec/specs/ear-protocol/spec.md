@@ -49,8 +49,8 @@ The protocol SHALL define the following message types sent from Core to Ear:
 - `partial_transcript`: interim STT result. Fields: `type`, `sessionId`, `text` (string), `isFinal` (boolean, always `false`).
 - `final_transcript`: terminal STT result. Fields: `type`, `sessionId`, `text` (string).
 - `play_cue`: instructs the Ear to play an audible cue. Fields: `type`, `cue` (enum: `wake`, `endpoint`, `error`, `ack_done`, `ack_continue`, `ack_thinking`, `ack_success`, `ack_error`).
-- `session_mode`: forward-compat mode hint for an active session. Fields: `type`, `sessionId`, `mode` (enum: `regular`, `long_note`). Reserved; the MVP does not emit it (mode is set per-session at `session_start`).
-- `arm_capture`: backend-initiated capture trigger. Fields: `type`, `mode` (enum: `regular`, `long_note`). Instructs the Ear to open a fresh capture session under the given mode without a wake-word.
+- `session_mode`: forward-compat mode hint for an active session. Fields: `type`, `sessionId`, `mode` (enum: `regular`, `continuous`). Reserved; the MVP does not emit it (mode is set per-session at `session_start`).
+- `arm_capture`: backend-initiated capture trigger. Fields: `type`, `mode` (enum: `regular`, `continuous`). Instructs the Ear to open a fresh capture session under the given mode without a wake-word.
 - `session_end`: Core-initiated end of session. Fields: `type`, `sessionId`, `reason` (enum: `endpoint`, `timeout`, `stt_error`, `user`), `detail` (optional string).
 
 `wake_ack.action` SHALL be `proceed` in the MVP; the `yield` value exists in the enum so a future coordination change can use it without renegotiation.
@@ -73,10 +73,10 @@ The Swift decoder SHALL tolerate unknown `cue` and `session_mode.mode` values by
 
 #### Scenario: `arm_capture` opens a fresh session
 
-- **WHEN** the Ear receives `{ "type": "arm_capture", "mode": "long_note" }`
-- **THEN** the Ear SHALL open a new capture session under `long_note` mode without waiting for a wake-word
+- **WHEN** the Ear receives `{ "type": "arm_capture", "mode": "continuous" }`
+- **THEN** the Ear SHALL open a new capture session under `continuous` mode without waiting for a wake-word
 - **AND** the Ear SHALL play the `ack_continue` cue
-- **AND** the Ear SHALL send `session_start` carrying `mode: "long_note"`
+- **AND** the Ear SHALL send `session_start` carrying `mode: "continuous"`
 
 ### Requirement: Session lifecycle
 
