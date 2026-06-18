@@ -81,22 +81,23 @@ export class SessionAgentRunner {
       terminalQueued: null,
     };
 
-    // Wall-clock cap on the owning sub-agent loop. For continuous-mode
-    // sessions the user can legitimately dictate for many minutes; the
-    // earSessionOwnerCapMs default (90 s) would kill an active dictation.
-    // The silence cap and the sub-agent's own finalize/discard tool
-    // decisions are the real lifecycle drivers; this is the runaway
-    // backstop only.
-    const wallClockMs = args.handle.mode === "continuous"
-      ? 60 * 60 * 1_000
-      : this.env.earSessionOwnerCapMs;
-    state.safetyTimer = setTimeout(() => this.onSafetyCap(state), wallClockMs);
+    // Wall-clock cap on the owning sub-agent loop. Continuous-mode
+    // sessions skip it entirely — the user is actively dictating and the
+    // SessionService silence cap (60 s, resets on activity) plus the
+    // sub-agent's own finalize/discard decisions cover lifecycle. The
+    // runner cap stays as a backstop only for regular owned sessions.
+    if (args.handle.mode !== "continuous") {
+      state.safetyTimer = setTimeout(
+        () => this.onSafetyCap(state),
+        this.env.earSessionOwnerCapMs,
+      );
+    }
 
     this.logger.info(
       {
         sessionId: state.handle.sessionId,
         owner: args.spec.name,
-        ownerCapMs: wallClockMs,
+        ownerCapMs: args.handle.mode === "continuous" ? null : this.env.earSessionOwnerCapMs,
         mode: args.handle.mode,
         pauseMs: state.pauseMs,
       },

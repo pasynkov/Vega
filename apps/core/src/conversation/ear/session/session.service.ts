@@ -39,7 +39,7 @@ export interface OwnedSessionController {
 interface InFlightSession extends SessionRecord {
   shortId: bigint;
   deepgram: DeepgramSession | null;
-  timeout: NodeJS.Timeout;
+  timeout: NodeJS.Timeout | null;
   silenceTimer: NodeJS.Timeout | null;
   silenceCapMs: number;
   vad: SilenceDetector;
@@ -51,10 +51,6 @@ interface InFlightSession extends SessionRecord {
 
 const CORE_SILENCE_CAP_MS = 5_000;
 export const CONTINUOUS_MODE_SILENCE_CAP_MS = 60_000;
-// Wall-clock backstop for continuous sessions. Silence cap (60 s,
-// resets on activity) is the real "user stopped talking" signal. This
-// is just the last-resort backstop for a runaway stuck stream.
-export const CONTINUOUS_MODE_MAX_WALL_CLOCK_MS = 60 * 60 * 1_000;
 
 @Injectable()
 export class SessionService {
@@ -200,19 +196,16 @@ export class SessionService {
       sampleRate: message.sampleRate,
       shortId,
       deepgram: null,
-      // Wall-clock backstop. Regular sessions die after sessionTimeoutMs
-      // (30 s default). Continuous sessions need a much larger cap because
-      // the user is actively dictating; sessionTimeoutMs and even
-      // earSessionOwnerCapMs (90 s) would kill the dictation mid-stream.
-      // The real "user is done" signal is the silence cap (60 s,
-      // resets on every partial / final). This wall-clock is just the
-      // last-resort backstop for a runaway stuck Deepgram stream.
-      timeout: setTimeout(
-        () => this.handleTimeout(message.sessionId),
-        initialMode === "continuous"
-          ? CONTINUOUS_MODE_MAX_WALL_CLOCK_MS
-          : this.env.sessionTimeoutMs,
-      ),
+      // Wall-clock backstop for regular sessions only. Continuous mode
+      // has no wall-clock cap — the silence cap (60 s, resets on every
+      // partial / final) covers stuck-Deepgram cases, and the Ear's
+      // own safety cap is an independent backstop.
+      timeout: initialMode === "continuous"
+        ? null
+        : setTimeout(
+            () => this.handleTimeout(message.sessionId),
+            this.env.sessionTimeoutMs,
+          ),
       silenceTimer: null,
       silenceCapMs: initialCap,
       vad: new SilenceDetector(undefined, (msg, meta) => {
@@ -423,7 +416,7 @@ export class SessionService {
   ): Promise<void> {
     if (session.closed) return;
     session.closed = true;
-    clearTimeout(session.timeout);
+    if (session.timeout) clearTimeout(session.timeout);
     if (session.silenceTimer) {
       clearTimeout(session.silenceTimer);
       session.silenceTimer = null;
