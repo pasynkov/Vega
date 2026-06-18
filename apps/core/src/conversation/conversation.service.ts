@@ -25,11 +25,18 @@ export class ConversationService {
   ) {}
 
   async handleTurn(sessionId: string, userText: string): Promise<TurnResult> {
-    const prior = this.inFlight.get(sessionId);
-    if (prior) {
-      await prior.catch(() => undefined);
-    }
-    const current = this.runTurn(sessionId, userText);
+    // Chain onto the current tail so concurrent callers serialize against
+    // the SAME promise. The prior inFlight-read-then-set pattern raced
+    // when two callers read the same `prior` and then both started their
+    // own `runTurn` after `prior` settled. The chain head IS the value
+    // stored in inFlight, so every subsequent caller appends to the
+    // latest tail in arrival order. A rejecting turn is swallowed by the
+    // chain so it does not block the next queued turn (the caller still
+    // sees the rejection via its own `current` promise below).
+    const prior = this.inFlight.get(sessionId) ?? Promise.resolve();
+    const current = prior
+      .catch(() => undefined)
+      .then(() => this.runTurn(sessionId, userText));
     this.inFlight.set(sessionId, current);
     try {
       return await current;

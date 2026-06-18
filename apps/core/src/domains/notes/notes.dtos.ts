@@ -6,14 +6,6 @@ export class SaveShortNoteDto {
   text!: string;
 }
 
-export class BeginDictationDto {
-  // Marker DTO. Tools require non-empty schemas; the placeholder keeps the
-  // boot smoke happy while expressing "no input expected".
-  @IsString()
-  @MinLength(0)
-  intent!: string;
-}
-
 export class FinalizeNoteDto {
   @IsString()
   @MinLength(1)

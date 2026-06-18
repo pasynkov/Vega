@@ -1,11 +1,11 @@
 import { makeTool } from "../../conversation/kernel/tool-factory";
+import { buildOpenContinuousSessionTool } from "../../conversation/kernel/tools/open-continuous-session.tool";
 import type { AgentTool, AgentSpec } from "../../conversation/kernel/agent.types";
 import { SessionService } from "../../conversation/ear/session/session.service";
 import { EarSessionRouter } from "../../conversation/sessions/ear-session-router.service";
 import { ToolUsedOutsideSessionError } from "../../conversation/sessions/ear-session.errors";
 import { NotesStorageService } from "./notes-storage.service";
 import {
-  BeginDictationDto,
   DiscardNoteDto,
   FinalizeNoteDto,
   SaveShortNoteDto,
@@ -36,20 +36,7 @@ export function buildNotesTools(
     },
   });
 
-  const beginDictation = makeTool({
-    dto: BeginDictationDto,
-    name: "begin_dictation",
-    description:
-      "Открой длинную сессию диктовки. Текущая сессия (короткая) уже закрылась после endpoint; этот tool попросит Ear открыть СВЕЖУЮ сессию в long_note режиме (Submarine cue, 60s silence cap), которой будет владеть session-bound notes-агент. Используй ТОЛЬКО когда пользователь явно хочет надиктовать длинную заметку.",
-    handler: async () => {
-      const spec = sessionSpecRef.spec;
-      if (!spec) {
-        return { ok: false, reason: "notes-session-spec-not-ready" };
-      }
-      const result = router.arm({ ownerSpec: spec, mode: "long_note" });
-      return result;
-    },
-  });
+  const openContinuousSession = buildOpenContinuousSessionTool(router, sessionSpecRef);
 
   const finalizeNote = makeTool({
     dto: FinalizeNoteDto,
@@ -76,7 +63,7 @@ export function buildNotesTools(
   });
 
   return {
-    supervisorTools: [saveShortNote, beginDictation],
+    supervisorTools: [saveShortNote, openContinuousSession],
     sessionTools: [finalizeNote, discardNote],
   };
 }

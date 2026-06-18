@@ -11,6 +11,7 @@ import { EarSessionRouter } from "./ear-session-router.service";
 import { SessionAgentRunner } from "./session-agent-runner.service";
 import { FlushHookRegistry } from "./flush-hook-registry.service";
 import type { EarSessionHandle } from "./ear-session-handle";
+import { isWakeWordFinal } from "../ear/wake/wake-vocabulary";
 
 @Global()
 @Module({
@@ -82,15 +83,39 @@ export class EarSessionsModule implements OnApplicationBootstrap {
     this.sessions.addTranscriptListener((sessionId, kind, text) => {
       if (kind !== "final") return;
       if (this.router.ownerOf(sessionId)) return;
+      // Bug-4. Drop any final that arrived on a session the router just
+      // tore down as part of an arm() transition. Those finals (e.g.
+      // "Так,", "это у нас" landing between the LLM's open_continuous_session
+      // decision and the actual session close) would otherwise fan out as
+      // fresh orchestrator turns and the supervisor would route them to
+      // notes again.
+      if (this.router.wasTornDownByArm(sessionId)) {
+        this.logger.info(
+          { sessionId, finalText: text.slice(0, 80) },
+          "dropped-in-transition",
+        );
+        return;
+      }
       const trimmed = text.trim();
       if (trimmed.length === 0) return;
       let seen = firedFinals.get(sessionId);
+      const isFirstFinalForSession = !seen;
       if (!seen) {
         seen = new Set();
         firedFinals.set(sessionId, seen);
       }
       if (seen.has(trimmed)) return;
       seen.add(trimmed);
+      // Bug-1. The Ear keeps streaming audio after wake, so the wake
+      // word itself (e.g. "Этна.") shows up as the very first final.
+      // Drop it before it reaches the orchestrator.
+      if (isFirstFinalForSession && isWakeWordFinal(trimmed)) {
+        this.logger.info(
+          { sessionId, finalText: trimmed },
+          "Dropping wake-only first final",
+        );
+        return;
+      }
       this.logger.info(
         { sessionId, finalText: trimmed.slice(0, 160) },
         "Per-final → orchestrator",

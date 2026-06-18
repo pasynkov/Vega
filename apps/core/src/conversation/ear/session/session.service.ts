@@ -50,7 +50,7 @@ interface InFlightSession extends SessionRecord {
 }
 
 const CORE_SILENCE_CAP_MS = 5_000;
-export const LONG_NOTE_SILENCE_CAP_MS = 60_000;
+export const CONTINUOUS_MODE_SILENCE_CAP_MS = 60_000;
 
 @Injectable()
 export class SessionService {
@@ -109,9 +109,9 @@ export class SessionService {
     if (!session || session.closed) return false;
     if (session.mode === mode) return true;
     session.mode = mode;
-    if (mode === "long_note") {
+    if (mode === "continuous") {
       session.vadEndpointSuppressed = true;
-      session.silenceCapMs = LONG_NOTE_SILENCE_CAP_MS;
+      session.silenceCapMs = CONTINUOUS_MODE_SILENCE_CAP_MS;
       this.armSilenceTimer(session);
     } else {
       session.vadEndpointSuppressed = false;
@@ -154,6 +154,17 @@ export class SessionService {
     return !!s && !s.closed;
   }
 
+  // Find the active (non-closed) session for a device, if any. Used by
+  // EarSessionRouter.arm to terminate an in-flight short session before
+  // dispatching arm_capture so the Ear receives the new arm in idle state.
+  getActiveSessionIdForDevice(deviceId: string): string | undefined {
+    for (const session of this.bySessionId.values()) {
+      if (session.closed) continue;
+      if (session.deviceId === deviceId) return session.sessionId;
+    }
+    return undefined;
+  }
+
   getSessionMode(sessionId: string): SessionMode | undefined {
     return this.bySessionId.get(sessionId)?.mode;
   }
@@ -166,7 +177,7 @@ export class SessionService {
     const shortId = sessionShortIdFromUuid(message.sessionId);
     const startedAt = new Date().toISOString();
     const initialMode: SessionMode = message.mode ?? "regular";
-    const initialCap = initialMode === "long_note" ? LONG_NOTE_SILENCE_CAP_MS : CORE_SILENCE_CAP_MS;
+    const initialCap = initialMode === "continuous" ? CONTINUOUS_MODE_SILENCE_CAP_MS : CORE_SILENCE_CAP_MS;
 
     const session: InFlightSession = {
       sessionId: message.sessionId,
@@ -192,7 +203,7 @@ export class SessionService {
       // SessionAgentRunner already uses as its owner cap.
       timeout: setTimeout(
         () => this.handleTimeout(message.sessionId),
-        initialMode === "long_note"
+        initialMode === "continuous"
           ? this.env.earSessionOwnerCapMs
           : this.env.sessionTimeoutMs,
       ),
@@ -205,7 +216,7 @@ export class SessionService {
         if (msg.includes("silence started") || msg.includes("silence broken")) return;
         this.logger.info({ sessionId: message.sessionId, ...meta }, msg);
       }),
-      vadEndpointSuppressed: initialMode === "long_note",
+      vadEndpointSuppressed: initialMode === "continuous",
       mode: initialMode,
       closed: false,
       ownerController: null,
@@ -283,7 +294,7 @@ export class SessionService {
     target.audioBuffers.push(Buffer.from(payload));
     target.deepgram?.send(payload);
 
-    // In suppressed mode (long_note) the VAD's decision is ignored and
+    // In suppressed mode (continuous) the VAD's decision is ignored and
     // running the detector just spams "VAD endpoint reached" forever while
     // the user pauses. Skip the call entirely.
     if (target.vadEndpointSuppressed) return;

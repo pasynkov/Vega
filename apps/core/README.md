@@ -28,10 +28,10 @@ The harness is the only entry point that exercises the LLM layer in this change;
 
 ## Tool-driven Ear sessions
 
-A domain tool can own an Ear capture session for its full lifetime via `EarSessionRouter` and `SessionAgentRunner` (see `src/ear-sessions/`). The flow:
+A domain tool can own an Ear capture session for its full lifetime via `EarSessionRouter` and `SessionAgentRunner` (see `src/conversation/sessions/`). The flow:
 
-1. Supervisor calls a domain tool (e.g. notes' `begin_dictation`) which calls `EarSessionRouter.arm({ ownerSpec, mode: "long_note" })`. The router sends `arm_capture` and reserves the next session for `ownerSpec`.
-2. Ear opens a fresh long-note session. On `session_start`, the router binds `sessionId → ownerSpec` and `SessionAgentRunner.start(...)` boots a session-bound sub-agent.
+1. Supervisor calls a domain tool (e.g. notes' `open_continuous_session`, built from the kernel factory in `src/conversation/kernel/tools/`) which calls `EarSessionRouter.arm({ ownerSpec, mode: "continuous" })`. The router first terminates any active short session for the device (so the Ear sees `session_end` → idle), then sends `arm_capture` and reserves the next session for `ownerSpec`.
+2. Ear opens a fresh continuous session. On `session_start`, the router binds `sessionId → ownerSpec` and `SessionAgentRunner.start(...)` boots a session-bound sub-agent.
 3. Every Deepgram final for that session is pushed into the sub-agent as the next turn. The sub-agent reacts via its own session-bound tools (e.g. `append_text`, `finalize_note`, `discard_note`).
 4. The sub-agent ends the session by returning a `{ release: true, reason }` tool result; the runner terminates the Ear session with initiator `core:tool_release`.
 
