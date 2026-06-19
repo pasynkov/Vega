@@ -65,6 +65,13 @@ final class RoundTripTests: XCTestCase {
     func testCoreSessionEndWithDetail() throws { try roundTrip(CoreSessionEndMessage.self, key: "core_session_end_with_detail") }
     func testSessionModeContinuous() throws { try roundTrip(SessionModeChangeMessage.self, key: "session_mode_continuous") }
     func testArmCaptureContinuous() throws { try roundTrip(ArmCaptureMessage.self, key: "arm_capture_continuous") }
+    func testArmCaptureAsk() throws { try roundTrip(ArmCaptureMessage.self, key: "arm_capture_ask") }
+    func testOverlayListeningAsk() throws { try roundTrip(OverlayUpdateMessage.self, key: "overlay_update_listening_ask") }
+    func testSessionStartAsk() throws { try roundTrip(SessionStartMessage.self, key: "session_start_ask") }
+    func testSessionStartImmersive() throws { try roundTrip(SessionStartMessage.self, key: "session_start_immersive") }
+    func testArmCaptureImmersive() throws { try roundTrip(ArmCaptureMessage.self, key: "arm_capture_immersive") }
+    func testSessionModeImmersive() throws { try roundTrip(SessionModeChangeMessage.self, key: "session_mode_immersive") }
+    func testOverlayImmersive() throws { try roundTrip(OverlayUpdateMessage.self, key: "overlay_update_immersive") }
 
     func testEventNames() {
         XCTAssertEqual(EventName.register, "register")

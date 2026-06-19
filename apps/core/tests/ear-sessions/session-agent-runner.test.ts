@@ -41,10 +41,18 @@ const spec: AgentSpec = {
   enabled: true,
 };
 
-function makeRunner(opts: { capMs: number; pauseMs: number }) {
+let lastOverlay: { set: ReturnType<typeof vi.fn> } | null = null;
+
+function makeRunner(opts: { capMs: number; pauseMs: number; turnTimeoutMs?: number }) {
   const llm = { getModel: () => ({} as any) } as any;
-  const env = { earSessionOwnerCapMs: opts.capMs, earSessionPauseMs: opts.pauseMs } as any;
-  return new SessionAgentRunner(new StubLogger() as any, llm, env);
+  const env = {
+    earSessionOwnerCapMs: opts.capMs,
+    earSessionPauseMs: opts.pauseMs,
+    immersiveTurnTimeoutMs: opts.turnTimeoutMs ?? 20_000,
+  } as any;
+  const overlay = { set: vi.fn(() => true) };
+  lastOverlay = overlay;
+  return new SessionAgentRunner(new StubLogger() as any, llm, env, overlay as any);
 }
 
 function emptyTurn(): { messages: BaseMessage[] } {
@@ -220,5 +228,133 @@ describe("SessionAgentRunner", () => {
     expect(onRelease).toHaveBeenCalledTimes(1);
     expect(onRelease.mock.calls[0][1]).toBe("stt_error");
     expect(onRelease.mock.calls[0][2]).toBe("core:tool_error");
+  });
+});
+
+describe("SessionAgentRunner per-final-turn (immersive)", () => {
+  const immersiveHandle: EarSessionHandle = {
+    sessionId: "sid-imm-1",
+    deviceId: "dev-1",
+    mode: "immersive",
+    arrivedAt: 0,
+  };
+  const immersiveSpec: AgentSpec = {
+    name: "shopping-session",
+    description: "imm-test",
+    examples: [],
+    systemPrompt: "p",
+    tools: [],
+    enabled: true,
+  };
+
+  beforeEach(() => {
+    invokeMock.mockReset();
+    createReactAgentMock.mockClear();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("fires agent.invoke once per final and emits inFlight true/false around it", async () => {
+    invokeMock.mockResolvedValue(emptyTurn());
+    const runner = makeRunner({ capMs: 60_000, pauseMs: 60_000 });
+    const onRelease = vi.fn();
+    const onInFlightChange = vi.fn();
+    const controller = runner.start({
+      handle: immersiveHandle,
+      spec: immersiveSpec,
+      initialPrompt: "boot",
+      callbacks: { onRelease, onInFlightChange },
+    });
+    controller.pushFinal("добавь молоко");
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    expect(onInFlightChange.mock.calls.map((c) => c[0])).toEqual([true, false]);
+    expect(onRelease).not.toHaveBeenCalled();
+  });
+
+  it("sequential queue — two finals invoke agent twice in order", async () => {
+    let count = 0;
+    invokeMock.mockImplementation(async () => {
+      count++;
+      return emptyTurn();
+    });
+    const runner = makeRunner({ capMs: 60_000, pauseMs: 60_000 });
+    const onRelease = vi.fn();
+    const onInFlightChange = vi.fn();
+    const controller = runner.start({
+      handle: immersiveHandle,
+      spec: immersiveSpec,
+      initialPrompt: "boot",
+      callbacks: { onRelease, onInFlightChange },
+    });
+    controller.pushFinal("first");
+    controller.pushFinal("second");
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(count).toBe(2);
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("close_immersive_session release marker → onRelease(user, core:tool_release)", async () => {
+    invokeMock.mockResolvedValue(releaseTurn("user"));
+    const runner = makeRunner({ capMs: 60_000, pauseMs: 60_000 });
+    const onRelease = vi.fn();
+    const onInFlightChange = vi.fn();
+    const controller = runner.start({
+      handle: immersiveHandle,
+      spec: immersiveSpec,
+      initialPrompt: "boot",
+      callbacks: { onRelease, onInFlightChange },
+    });
+    controller.pushFinal("закрой покупки");
+    for (let i = 0; i < 15; i++) await Promise.resolve();
+    expect(onRelease).toHaveBeenCalledTimes(1);
+    expect(onRelease.mock.calls[0][1]).toBe("user");
+    expect(onRelease.mock.calls[0][2]).toBe("core:tool_release");
+  });
+
+  it("invocation timeout → paints error overlay, does NOT release", async () => {
+    invokeMock.mockImplementation(async (_messages, opts) => {
+      const signal = (opts as { signal?: AbortSignal }).signal;
+      return new Promise((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason ?? new Error("aborted")));
+      });
+    });
+    const runner = makeRunner({ capMs: 60_000, pauseMs: 60_000, turnTimeoutMs: 1_000 });
+    const onRelease = vi.fn();
+    const onInFlightChange = vi.fn();
+    const controller = runner.start({
+      handle: immersiveHandle,
+      spec: immersiveSpec,
+      initialPrompt: "boot",
+      callbacks: { onRelease, onInFlightChange },
+    });
+    controller.pushFinal("долгий запрос");
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1_100);
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(onRelease).not.toHaveBeenCalled();
+    expect(lastOverlay?.set).toHaveBeenCalled();
+    const overlayArgs = lastOverlay!.set.mock.calls[0];
+    expect((overlayArgs[1] as any).kind).toBe("error");
+    expect(onInFlightChange.mock.calls.map((c) => c[0])).toEqual([true, false]);
+  });
+
+  it("signalEnd in per-final-turn → release with given reason, no terminal invoke", async () => {
+    invokeMock.mockResolvedValue(emptyTurn());
+    const runner = makeRunner({ capMs: 60_000, pauseMs: 60_000 });
+    const onRelease = vi.fn();
+    const controller = runner.start({
+      handle: immersiveHandle,
+      spec: immersiveSpec,
+      initialPrompt: "boot",
+      callbacks: { onRelease },
+    });
+    controller.signalEnd("endpoint");
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(onRelease).toHaveBeenCalledTimes(1);
+    expect(onRelease.mock.calls[0][1]).toBe("endpoint");
+    expect(invokeMock).not.toHaveBeenCalled();
   });
 });

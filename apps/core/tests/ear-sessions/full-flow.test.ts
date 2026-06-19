@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import type { BaseMessage } from "@langchain/core/messages";
 import { SqliteSaver } from "@langchain/langgraph-checkpoint-sqlite";
-import { mkdtempSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -43,13 +43,10 @@ const mocks = vi.hoisted(() => {
               return { messages: [...state.messages, new AIMessage("")] };
             }
           } else if (
-            /open_continuous_session|большую заметку|длинную заметку|continuous/i.test(text)
+            /open_continuous_session|большую заметку|длинную заметку|continuous|купить молоко/i.test(text)
           ) {
             toolName = "open_continuous_session";
-            args = { intent: "long note" };
-          } else if (/save_short_note|short note|купить молоко/i.test(text)) {
-            toolName = "save_short_note";
-            args = { text: "купить молоко" };
+            args = { name: "тестовая заметка", intent: "long note" };
           } else {
             return {
               messages: [...state.messages, new AIMessage("noop")],
@@ -210,7 +207,14 @@ function setupHarness(opts: {
   const runner = new SessionAgentRunner(new StubLogger() as any, llm, env);
   const flushHooks = new FlushHookRegistry();
 
-  const { supervisorTools, sessionTools } = buildNotesTools(storage, sessions, router, overlayStub, sessionSpecRef);
+  const { supervisorTools, sessionTools } = buildNotesTools(
+    storage,
+    sessions,
+    router,
+    overlayStub,
+    earRegistry,
+    sessionSpecRef,
+  );
   const notesSupervisorSpec = buildNotesSupervisorSpec(supervisorTools);
   const notesSessionSpec = buildNotesSessionSpec(sessionTools);
   sessionSpecRef.spec = notesSessionSpec;
@@ -224,14 +228,22 @@ function setupHarness(opts: {
   });
   sessions.attachOwnerStarter((sessionId, ownerSpec) => {
     const ownership = router.ownershipOf(sessionId)!;
+    if (ownership.kind !== "owner") {
+      throw new Error(`test owner starter received non-owner ownership for ${sessionId}`);
+    }
     const handle: EarSessionHandle = {
       sessionId,
       deviceId: ownership.deviceId,
       mode: ownership.mode,
       arrivedAt: Date.now(),
+      artifactName: ownership.artifactName,
     };
     const hook = flushHooks.get(ownerSpec.name);
     const finalAppend = flushHooks.getFinalAppend(ownerSpec.name);
+    const sessionBegin = flushHooks.getSessionBegin(ownerSpec.name);
+    if (sessionBegin) {
+      void sessionBegin(sessionId, { artifactName: ownership.artifactName });
+    }
     return runner.start({
       handle,
       spec: ownerSpec,
@@ -245,12 +257,21 @@ function setupHarness(opts: {
       },
     });
   });
+  flushHooks.registerSessionBegin(notesSessionSpec.name, (sid, ctx) => {
+    storage.startNamed(sid, ctx.artifactName ?? "note");
+  });
   flushHooks.registerFinalAppend(notesSessionSpec.name, (sid, text) => {
     storage.appendChunk(sid, text);
   });
 
   const preSupervisor = new PreSupervisorNode(new StubLogger() as any);
-  const supervisor = new SupervisorNode(new StubLogger() as any, registry, llm);
+  const supervisor = new SupervisorNode(
+    new StubLogger() as any,
+    registry,
+    llm,
+    { list: () => [], get: () => undefined } as any,
+    { arm: () => ({ ok: true }) } as any,
+  );
   const checkpointer = SqliteSaver.fromConnString(":memory:");
   const graphFactory = new GraphFactory(
     new StubLogger() as any,
@@ -309,28 +330,11 @@ describe("End-to-end orchestrator → notes → arm_capture", () => {
       "11111111-1111-1111-1111-111111111111",
     );
     expect(ownership).toBeDefined();
-    expect(ownership!.ownerSpec.name).toBe("notes-session");
-  });
-
-  it("\"запиши заметку купить молоко\" → save_short_note path writes a file (no arm)", async () => {
-    const { graphFactory, sentToEar } = setupHarness({
-      routeReply: { goto: "notes", task: "save short note купить молоко" },
-      notesDir: tmpDir,
-    });
-
-    const graph = graphFactory.build();
-    await graph.invoke(
-      { messages: [new HumanMessage("запиши заметку купить молоко")], sessionId: "thread-2" },
-      { configurable: { thread_id: "thread-2" }, recursionLimit: 8 },
-    );
-
-    // No arm should have fired on a short-note path.
-    expect(sentToEar.find((m) => m?.type === "arm_capture")).toBeUndefined();
-
-    const files = require("node:fs").readdirSync(tmpDir).filter((n: string) => n.endsWith(".md"));
-    expect(files.length).toBe(1);
-    const content = readFileSync(join(tmpDir, files[0]), "utf8");
-    expect(content).toMatch(/купить молоко/);
+    if (!ownership || ownership.kind !== "owner") {
+      throw new Error("expected owner ownership after bind");
+    }
+    expect(ownership.ownerSpec.name).toBe("notes-session");
+    expect(ownership.artifactName).toBe("тестовая заметка");
   });
 
   it("after open_continuous_session, simulated session_start binds ownership and finals route to the runner", async () => {

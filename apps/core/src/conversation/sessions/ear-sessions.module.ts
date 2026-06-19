@@ -13,6 +13,7 @@ import { FlushHookRegistry } from "./flush-hook-registry.service";
 import type { EarSessionHandle } from "./ear-session-handle";
 import { isWakeWordFinal } from "../ear/wake/wake-vocabulary";
 import { OverlayService } from "../overlay/overlay.service";
+import { ImmersiveDomainRegistry } from "../immersive/immersive-domain.registry";
 
 @Global()
 @Module({
@@ -30,6 +31,7 @@ export class EarSessionsModule implements OnApplicationBootstrap {
     private readonly flushHooks: FlushHookRegistry,
     private readonly earRegistry: EarRegistry,
     private readonly overlay: OverlayService,
+    private readonly immersiveRegistry: ImmersiveDomainRegistry,
   ) {}
 
   // Paint the outcome of an orchestrator turn on the overlay of the
@@ -83,21 +85,74 @@ export class EarSessionsModule implements OnApplicationBootstrap {
   onApplicationBootstrap(): void {
     this.sessions.attachRouter({
       ownerOf: (sid) => this.router.ownerOf(sid),
-      bindOnSessionStart: (msg, deviceId) => this.router.bindOnSessionStart(msg, deviceId),
+      bindOnSessionStart: (msg, deviceId) => {
+        const o = this.router.bindOnSessionStart(msg, deviceId);
+        if (!o) return undefined;
+        if (o.kind === "ask") {
+          return { sessionId: o.sessionId, kind: "ask", captureMs: o.captureMs };
+        }
+        return {
+          sessionId: o.sessionId,
+          kind: "owner",
+          artifactName: o.artifactName,
+        };
+      },
       release: (sid) => this.router.release(sid),
+      isAskSession: (sid) => this.router.isAskSession(sid),
+      resolveAskAnswer: (sid, text) => this.router.resolveAskAnswer(sid, text),
+      resolveAskOutcome: (sid, outcome) => this.router.resolveAskOutcome(sid, outcome),
     });
     this.sessions.attachOwnerStarter((sessionId, ownerSpec): OwnedSessionController => {
       const ownership = this.router.ownershipOf(sessionId)!;
+      if (ownership.kind !== "owner") {
+        throw new Error(`attachOwnerStarter called for non-owner session ${sessionId}`);
+      }
       const handle: EarSessionHandle = {
         sessionId,
         deviceId: ownership.deviceId,
         mode: ownership.mode,
         arrivedAt: Date.now(),
+        artifactName: ownership.artifactName,
       };
+      const isImmersive = ownership.mode === "immersive";
       const initialPrompt = ownership.initialPrompt
         ?? `Открыта сессия захвата под доменом ${ownerSpec.name} (mode=${ownership.mode}). Жди финальные транскрипты и реагируй своими session-bound тулами.`;
-      const hook = this.flushHooks.get(ownerSpec.name);
-      const finalAppend = this.flushHooks.getFinalAppend(ownerSpec.name);
+      const hook = isImmersive ? undefined : this.flushHooks.get(ownerSpec.name);
+      const finalAppend = isImmersive ? undefined : this.flushHooks.getFinalAppend(ownerSpec.name);
+      if (isImmersive) {
+        const immersive = this.immersiveRegistry.get(ownerSpec.name);
+        if (immersive) {
+          try {
+            const r = immersive.sessionBegin(ownership.deviceId);
+            if (r && typeof (r as Promise<void>).then === "function") {
+              (r as Promise<void>).catch((err) =>
+                this.logger.warn({ err, sessionId, owner: ownerSpec.name }, "immersive sessionBegin rejected"),
+              );
+            }
+          } catch (err) {
+            this.logger.warn({ err, sessionId, owner: ownerSpec.name }, "immersive sessionBegin threw");
+          }
+        } else {
+          this.logger.warn(
+            { sessionId, owner: ownerSpec.name },
+            "Immersive session has no registry entry — sessionBegin skipped",
+          );
+        }
+      } else {
+        const sessionBegin = this.flushHooks.getSessionBegin(ownerSpec.name);
+        if (sessionBegin) {
+          try {
+            const r = sessionBegin(sessionId, { artifactName: ownership.artifactName });
+            if (r && typeof (r as Promise<void>).then === "function") {
+              (r as Promise<void>).catch((err) =>
+                this.logger.warn({ err, sessionId, owner: ownerSpec.name }, "sessionBegin hook rejected"),
+              );
+            }
+          } catch (err) {
+            this.logger.warn({ err, sessionId, owner: ownerSpec.name }, "sessionBegin hook threw");
+          }
+        }
+      }
       const ctrl = this.runner.start({
         handle,
         spec: ownerSpec,
@@ -108,6 +163,9 @@ export class EarSessionsModule implements OnApplicationBootstrap {
             ? async (sid, initiator) => { await hook(sid, initiator); }
             : undefined,
           onFinalAppend: finalAppend,
+          onInFlightChange: isImmersive
+            ? (inFlight) => this.sessions.setSessionInFlight(sessionId, inFlight)
+            : undefined,
         },
       });
       return ctrl;
@@ -116,6 +174,9 @@ export class EarSessionsModule implements OnApplicationBootstrap {
     this.sessions.addTranscriptListener((sessionId, kind, text) => {
       if (kind !== "final") return;
       if (this.router.ownerOf(sessionId)) return;
+      // Ask-session finals are delivered to the kernel ask-handle by
+      // SessionService.onFinal directly. They must NOT enter handleTurn.
+      if (this.router.isAskSession(sessionId)) return;
       // Bug-4. Drop any final that arrived on a session the router just
       // tore down as part of an arm() transition. Those finals (e.g.
       // "Так,", "это у нас" landing between the LLM's open_continuous_session
@@ -166,6 +227,7 @@ export class EarSessionsModule implements OnApplicationBootstrap {
     });
     this.sessions.attachEndpointListener(async (sessionId, finalText) => {
       if (this.router.ownerOf(sessionId)) return;
+      if (this.router.isAskSession(sessionId)) return;
       if (finalText.trim().length === 0) return;
       const seen = firedFinals.get(sessionId);
       firedFinals.delete(sessionId);

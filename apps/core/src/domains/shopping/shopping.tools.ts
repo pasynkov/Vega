@@ -7,6 +7,7 @@ import { EarRegistry } from "../../conversation/ear/ear.registry";
 import { ShoppingStorageService } from "./shopping-storage.service";
 import {
   AddItemDto,
+  CloseImmersiveSessionDto,
   DeleteItemDto,
   MarkBoughtDto,
   ShoppingIntentDto,
@@ -15,6 +16,7 @@ import type { ListView } from "@vega/ear-protocol";
 
 export interface ShoppingToolBundle {
   supervisorTools: AgentTool[];
+  sessionTools: AgentTool[];
 }
 
 const VIEW_TITLE = "Список покупок";
@@ -207,7 +209,29 @@ export function buildShoppingTools(
     },
   });
 
+  // Session-bound tool for immersive mode. Returns a SessionToolResult
+  // marker so SessionAgentRunner (per-final-turn strategy) releases the
+  // session via the standard tool-release path → EarSessionsModule
+  // terminates externally.
+  const closeImmersiveSession = makeTool({
+    dto: CloseImmersiveSessionDto,
+    name: "close_immersive_session",
+    description:
+      "Закрой текущую immersive-сессию домена и верни управление верхнему супервизору. Вызывай когда пользователь явно говорит \"закрой\" / \"хватит\" / \"выходим\" / \"закончил\" про этот домен. intent — короткое описание для логов.",
+    handler: async () => ({ release: true, reason: "user" }),
+  });
+
   return {
     supervisorTools: [addItem, listItems, markBought, deleteItem, clearList, showList, closeListView],
+    sessionTools: [
+      addItem,
+      listItems,
+      markBought,
+      deleteItem,
+      clearList,
+      showList,
+      closeListView,
+      closeImmersiveSession,
+    ],
   };
 }

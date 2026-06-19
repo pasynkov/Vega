@@ -9,6 +9,7 @@ import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
 import { DataSource } from "typeorm";
 import { ConversationModule } from "../../conversation/conversation.module";
 import { AgentRegistry } from "../../conversation/kernel/agent-registry.service";
+import { ImmersiveDomainRegistry } from "../../conversation/immersive/immersive-domain.registry";
 import { createDomainDataSource } from "../../integrations/database/domain-db.factory";
 import { ShoppingItem } from "./shopping-item.entity";
 import {
@@ -41,6 +42,7 @@ export class ShoppingModule implements OnModuleInit, OnApplicationShutdown {
   constructor(
     @InjectPinoLogger(ShoppingModule.name) private readonly logger: PinoLogger,
     private readonly registry: AgentRegistry,
+    private readonly immersiveRegistry: ImmersiveDomainRegistry,
     private readonly shoppingAgent: ShoppingAgentService,
     @Inject(SHOPPING_DATA_SOURCE) private readonly dataSource: DataSource,
   ) {}
@@ -51,6 +53,11 @@ export class ShoppingModule implements OnModuleInit, OnApplicationShutdown {
       this.logger.info({ database: this.dataSource.options.database }, "shopping DataSource initialized");
     }
     this.registry.register(this.shoppingAgent.spec);
+    this.immersiveRegistry.register({
+      name: "shopping",
+      sessionSpec: this.shoppingAgent.sessionSpec,
+      sessionBegin: (deviceId) => this.shoppingAgent.sessionBegin(deviceId),
+    });
   }
 
   async onApplicationShutdown(): Promise<void> {

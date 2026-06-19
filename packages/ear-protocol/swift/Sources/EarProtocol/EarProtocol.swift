@@ -67,6 +67,7 @@ public enum OverlaySound: String, Codable, Sendable {
     case ackSuccess = "ack_success"
     case ackError = "ack_error"
     case ackUnknown = "ack_unknown"
+    case cueListen = "cue_listen"
 }
 
 public enum OverlayKind: String, Codable, Sendable {
@@ -78,11 +79,14 @@ public enum OverlayKind: String, Codable, Sendable {
     case success
     case error
     case view
+    case immersive
 }
 
 public enum SessionMode: String, Codable, Sendable {
     case regular
     case continuous
+    case ask
+    case immersive
 }
 
 public enum WakeAction: String, Codable, Sendable {
@@ -301,9 +305,21 @@ public struct ListViewUpdateMessage: Codable, Sendable, Equatable {
 
 public struct ArmCaptureMessage: Codable, Sendable, Equatable {
     public let mode: SessionMode
+    public let captureMs: Int?
 
-    public init(mode: SessionMode) {
+    public init(mode: SessionMode, captureMs: Int? = nil) {
         self.mode = mode
+        self.captureMs = captureMs
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case mode, captureMs
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(mode, forKey: .mode)
+        if let captureMs { try c.encode(captureMs, forKey: .captureMs) }
     }
 }
 

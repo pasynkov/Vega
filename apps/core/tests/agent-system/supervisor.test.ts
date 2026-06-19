@@ -52,7 +52,13 @@ describe("SupervisorNode", () => {
       args: { goto: "memory", task: "remember user prefers espresso" },
     });
 
-    const node = new SupervisorNode(new StubLogger() as any, registry as any, llm as any);
+    const node = new SupervisorNode(
+      new StubLogger() as any,
+      registry as any,
+      llm as any,
+      { list: () => [], get: () => undefined } as any,
+      { arm: () => ({ ok: true }) } as any,
+    );
     const cmd: any = await node.run(baseState as any);
 
     expect(Array.isArray(cmd.goto) ? cmd.goto[0] : cmd.goto).toBe("memory");
@@ -66,7 +72,13 @@ describe("SupervisorNode", () => {
     ]);
     const llm = makeStubModelService({ name: "route", args: { goto: "__end__", speakText: "" } });
 
-    const node = new SupervisorNode(new StubLogger() as any, registry as any, llm as any);
+    const node = new SupervisorNode(
+      new StubLogger() as any,
+      registry as any,
+      llm as any,
+      { list: () => [], get: () => undefined } as any,
+      { arm: () => ({ ok: true }) } as any,
+    );
     const cmd: any = await node.run(baseState as any);
 
     expect(Array.isArray(cmd.goto) ? cmd.goto[0] : cmd.goto).toBe(END);
@@ -79,7 +91,13 @@ describe("SupervisorNode", () => {
     ]);
     const llm = makeStubModelService({ name: "route", args: { goto: "nonsense" } });
 
-    const node = new SupervisorNode(new StubLogger() as any, registry as any, llm as any);
+    const node = new SupervisorNode(
+      new StubLogger() as any,
+      registry as any,
+      llm as any,
+      { list: () => [], get: () => undefined } as any,
+      { arm: () => ({ ok: true }) } as any,
+    );
     const cmd: any = await node.run(baseState as any);
 
     expect(Array.isArray(cmd.goto) ? cmd.goto[0] : cmd.goto).toBe(END);

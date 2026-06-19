@@ -36,7 +36,7 @@ class StubOverlay {
 }
 
 function makeService(overlay: StubOverlay = new StubOverlay()): { svc: SessionService; overlay: StubOverlay } {
-  const env = { deepgramLanguage: "ru", sessionTimeoutMs: 30_000 } as any;
+  const env = { deepgramLanguage: "ru", sessionTimeoutMs: 30_000, immersiveSilenceCapMs: 15_000 } as any;
   const svc = new SessionService(
     new StubLogger() as any,
     new StubRegistry() as any,
@@ -129,5 +129,35 @@ describe("SessionService long-note mode", () => {
       .filter((c: any[]) => c[1]?.kind === "capturing")
       .map((c: any[]) => c[1].caption);
     expect(captionCalls).toEqual(["купи молоко", "и хлеб"]);
+  });
+
+  it("setSessionInFlight(true) clears pending silence timer; (false) re-arms it", async () => {
+    vi.useFakeTimers();
+    try {
+      const sid = "22222222-2222-2222-2222-222222222222";
+      const internal: any = (svc as any).bySessionId.get(sid);
+      // Set a small cap to exercise the path quickly.
+      internal.silenceCapMs = 50;
+      (svc as any).armSilenceTimer(internal);
+      expect(internal.silenceTimer).not.toBeNull();
+
+      // Pause: timer should be cleared.
+      expect(svc.setSessionInFlight(sid, true)).toBe(true);
+      expect(internal.silenceTimer).toBeNull();
+      expect(internal.inFlight).toBe(true);
+
+      // 200ms pass — cap would have fired had we not paused. Session
+      // must still be alive (not terminated).
+      await vi.advanceTimersByTimeAsync(200);
+      const stillThere: any = (svc as any).bySessionId.get(sid);
+      expect(stillThere && !stillThere.closed).toBe(true);
+
+      // Resume: timer re-armed.
+      expect(svc.setSessionInFlight(sid, false)).toBe(true);
+      expect(internal.silenceTimer).not.toBeNull();
+      expect(internal.inFlight).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

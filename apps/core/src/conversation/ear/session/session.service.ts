@@ -24,8 +24,19 @@ type FinalRoute = "default" | "owner";
 
 export interface SessionRouterAttachment {
   ownerOf(sessionId: string): AgentSpec | undefined;
-  bindOnSessionStart(message: SessionStartMessage, deviceId: string): { sessionId: string } | undefined;
+  bindOnSessionStart(
+    message: SessionStartMessage,
+    deviceId: string,
+  ):
+    | { sessionId: string; kind?: "owner" | "ask"; captureMs?: number; artifactName?: string }
+    | undefined;
   release(sessionId: string): void;
+  isAskSession?(sessionId: string): boolean;
+  resolveAskAnswer?(sessionId: string, text: string): boolean;
+  resolveAskOutcome?(
+    sessionId: string,
+    outcome: { kind: "answer"; text: string } | { kind: "timeout" } | { kind: "cancelled" },
+  ): boolean;
 }
 
 export interface OwnedSessionController {
@@ -44,10 +55,15 @@ interface InFlightSession extends SessionRecord {
   mode: SessionMode;
   closed: boolean;
   ownerController: OwnedSessionController | null;
+  isAsk: boolean;
+  artifactName: string | undefined;
+  inFlight: boolean;
 }
 
 const CORE_SILENCE_CAP_MS = 5_000;
 export const CONTINUOUS_MODE_SILENCE_CAP_MS = 60_000;
+export const IMMERSIVE_MODE_SILENCE_CAP_MS_DEFAULT = 15_000;
+const ASK_DEFAULT_CAPTURE_MS = 8_000;
 
 @Injectable()
 export class SessionService {
@@ -99,6 +115,25 @@ export class SessionService {
     session.silenceCapMs = ms;
     this.armSilenceTimer(session);
     this.logger.info({ sessionId, capMs: ms }, "Silence cap mutated");
+    return true;
+  }
+
+  // Owner-runner signal: while inFlight=true the silence-cap timer is
+  // paused (an agent invocation is running, "молчание" пользователя не
+  // имеет смысла). On false → re-arm with the full cap budget.
+  setSessionInFlight(sessionId: string, inFlight: boolean): boolean {
+    const session = this.bySessionId.get(sessionId);
+    if (!session || session.closed) return false;
+    if (session.inFlight === inFlight) return true;
+    session.inFlight = inFlight;
+    if (inFlight) {
+      if (session.silenceTimer) {
+        clearTimeout(session.silenceTimer);
+        session.silenceTimer = null;
+      }
+    } else {
+      this.armSilenceTimer(session);
+    }
     return true;
   }
 
@@ -166,7 +201,20 @@ export class SessionService {
   start(connection: EarConnection, message: SessionStartMessage): void {
     const startedAt = new Date().toISOString();
     const initialMode: SessionMode = message.mode ?? "regular";
-    const initialCap = initialMode === "continuous" ? CONTINUOUS_MODE_SILENCE_CAP_MS : CORE_SILENCE_CAP_MS;
+    // Probe router BEFORE building session config — the reservation tells
+    // us whether this is an ask session (needs captureMs cap + VAD off).
+    const ownership = this.router?.bindOnSessionStart(message, connection.deviceId);
+    const isAsk = ownership?.kind === "ask" || initialMode === "ask";
+    const askCaptureMs = ownership?.captureMs ?? ASK_DEFAULT_CAPTURE_MS;
+    const artifactName = ownership?.kind === "owner" ? ownership.artifactName : undefined;
+    const immersiveCapMs = this.env.immersiveSilenceCapMs;
+    const initialCap = isAsk
+      ? askCaptureMs
+      : initialMode === "continuous"
+        ? CONTINUOUS_MODE_SILENCE_CAP_MS
+        : initialMode === "immersive"
+          ? immersiveCapMs
+          : CORE_SILENCE_CAP_MS;
 
     const session: InFlightSession = {
       sessionId: message.sessionId,
@@ -184,11 +232,12 @@ export class SessionService {
       audioBuffers: [],
       sampleRate: message.sampleRate,
       deepgram: null,
-      // Wall-clock backstop for regular sessions only. Continuous mode
-      // has no wall-clock cap — the silence cap (60 s, resets on every
-      // partial / final) covers stuck-Deepgram cases, and the Ear's
-      // own safety cap is an independent backstop.
-      timeout: initialMode === "continuous"
+      // Wall-clock backstop for regular sessions only. Continuous,
+      // immersive and ask modes skip the timer — continuous/immersive
+      // have their own silence caps that reset on activity, ask has its
+      // own captureMs cap (does NOT reset on activity — single final
+      // exits).
+      timeout: initialMode === "continuous" || initialMode === "immersive" || isAsk
         ? null
         : setTimeout(
             () => this.handleTimeout(message.sessionId),
@@ -203,14 +252,17 @@ export class SessionService {
         if (msg.includes("silence started") || msg.includes("silence broken")) return;
         this.logger.info({ sessionId: message.sessionId, ...meta }, msg);
       }),
-      vadEndpointSuppressed: initialMode === "continuous",
+      vadEndpointSuppressed:
+        initialMode === "continuous" || initialMode === "immersive" || isAsk,
       mode: initialMode,
       closed: false,
       ownerController: null,
+      isAsk,
+      artifactName,
+      inFlight: false,
     };
 
-    const ownership = this.router?.bindOnSessionStart(message, connection.deviceId);
-    if (ownership && this.ownerStarter) {
+    if (ownership && ownership.kind !== "ask" && this.ownerStarter) {
       const ownerSpec = this.router!.ownerOf(message.sessionId);
       if (ownerSpec) {
         try {
@@ -295,6 +347,19 @@ export class SessionService {
         : message.reason === "vad"
           ? "endpoint"
           : "timeout";
+    if (session.isAsk) {
+      const outcome: { kind: "timeout" } | { kind: "cancelled" } =
+        message.reason === "timeout" ? { kind: "timeout" } : { kind: "cancelled" };
+      this.router?.resolveAskOutcome?.(session.sessionId, outcome);
+      await this.terminate(
+        session,
+        reason,
+        `core:ear_${message.reason}`,
+        undefined,
+        { silentOverlay: true },
+      );
+      return;
+    }
     if (session.ownerController) {
       try {
         session.ownerController.signalEnd(reason === "user" ? "user" : reason);
@@ -324,7 +389,11 @@ export class SessionService {
   private onPartial(session: InFlightSession, text: string): void {
     if (session.closed) return;
     session.partials.push(text);
-    this.armSilenceTimer(session);
+    // While in-flight the silence-cap timer is suspended (see
+    // setSessionInFlight). The partial is still recorded but does not
+    // try to arm — armSilenceTimer would short-circuit anyway, and we
+    // skip the call for clarity.
+    if (!session.inFlight) this.armSilenceTimer(session);
     const msg: PartialTranscriptMessage = {
       sessionId: session.sessionId,
       text,
@@ -338,6 +407,23 @@ export class SessionService {
     if (session.closed) return;
     session.finals.push(text);
     if (confidence !== null) session.transcriptConfidence = confidence;
+    // Ask-session: single-final-exit. Resolve the awaiting tool with the
+    // captured answer and terminate the session immediately. Skip the
+    // normal overlay paint + listener fan-out so handleTurn never runs
+    // for this final.
+    if (session.isAsk) {
+      const trimmed = text.trim();
+      if (trimmed.length === 0) return;
+      this.router?.resolveAskAnswer?.(session.sessionId, trimmed);
+      void this.terminate(
+        session,
+        "endpoint",
+        "core:ask_first_final",
+        undefined,
+        { silentOverlay: true },
+      );
+      return;
+    }
     this.armSilenceTimer(session);
     // STT caption on the overlay is intentionally scoped to domain-owned
     // continuous sessions (e.g. notes dictation). For regular short
@@ -350,7 +436,11 @@ export class SessionService {
     if (session.mode === "continuous" && session.ownerController) {
       this.overlay.set(
         session.deviceId,
-        { kind: "capturing", caption: text.slice(0, 240) },
+        {
+          kind: "capturing",
+          caption: text.slice(0, 240),
+          ...(session.artifactName ? { hint: session.artifactName.slice(0, 120) } : {}),
+        },
         {},
         "stt_final_continuous",
       );
@@ -393,12 +483,30 @@ export class SessionService {
   // session_end.
   private armSilenceTimer(session: InFlightSession): void {
     if (session.silenceTimer) clearTimeout(session.silenceTimer);
+    // While the owner-runner agent is in-flight we suspend the silence
+    // cap entirely: the user is not "молчит" — Core is mid-decision. The
+    // timer will be re-armed via setSessionInFlight(sessionId, false).
+    if (session.inFlight) {
+      session.silenceTimer = null;
+      return;
+    }
     session.silenceTimer = setTimeout(() => {
       if (session.closed) return;
       this.logger.info(
         { sessionId: session.sessionId, capMs: session.silenceCapMs },
         "Core silence cap reached, ending session",
       );
+      if (session.isAsk) {
+        this.router?.resolveAskOutcome?.(session.sessionId, { kind: "timeout" });
+        void this.terminate(
+          session,
+          "timeout",
+          "core:ask_silence_cap",
+          undefined,
+          { silentOverlay: true },
+        );
+        return;
+      }
       void this.terminate(session, "endpoint", "core:silence_cap");
     }, session.silenceCapMs);
   }
@@ -553,10 +661,12 @@ export class SessionService {
       void this.fireEndpointListeners(session.sessionId, dispatchText);
     }
 
-    try {
-      await this.store.persist(session);
-    } catch (err) {
-      this.logger.error({ err, sessionId: session.sessionId }, "Failed to persist recording");
+    if (!session.isAsk) {
+      try {
+        await this.store.persist(session);
+      } catch (err) {
+        this.logger.error({ err, sessionId: session.sessionId }, "Failed to persist recording");
+      }
     }
   }
 

@@ -9,6 +9,7 @@ import { EarSessionsModule } from "./sessions/ear-sessions.module";
 import { GraphFactory, CHECKPOINTER } from "./kernel/graph.factory";
 import { ConversationService } from "./conversation.service";
 import { SessionRegistry } from "./session-registry.service";
+import { ImmersiveModule } from "./immersive/immersive.module";
 
 const checkpointerProvider = {
   provide: CHECKPOINTER,
@@ -26,7 +27,7 @@ const checkpointerProvider = {
 // naming any pipeline module in their own imports.
 @Global()
 @Module({
-  imports: [DbModule, AgentSystemModule, SupervisorModule, EarModule, EarSessionsModule],
+  imports: [DbModule, ImmersiveModule, AgentSystemModule, SupervisorModule, EarModule, EarSessionsModule],
   providers: [
     checkpointerProvider,
     GraphFactory,
@@ -34,6 +35,7 @@ const checkpointerProvider = {
     ConversationService,
   ],
   exports: [
+    ImmersiveModule,
     AgentSystemModule,
     SupervisorModule,
     EarModule,

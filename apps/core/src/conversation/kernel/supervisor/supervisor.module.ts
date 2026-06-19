@@ -12,6 +12,6 @@ export class SupervisorModule {}
 export { SupervisorNode } from "./supervisor.node";
 export { PreSupervisorNode } from "./pre-supervisor.node";
 export { VegaState, type VegaStateType, type ActiveContext } from "./state";
-export { RouteSchema, makeRouteValidator, END_NODE } from "./route.schema";
+export { RouteSchema, makeRouteValidator, END_NODE, IMMERSIVE_OPEN_NODE } from "./route.schema";
 export { MEMORY_SEARCH_PORT, type MemorySearchPort } from "./memory-search.port";
 export { buildSupervisorPrompt } from "./supervisor.prompt";

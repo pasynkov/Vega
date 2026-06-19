@@ -5,10 +5,12 @@ import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages
 import type { BaseMessage } from "@langchain/core/messages";
 import { AgentRegistry } from "../agent-registry.service";
 import { LlmService } from "../../../integrations/llm/llm.module";
-import { END_NODE, RouteSchema, makeRouteValidator } from "./route.schema";
+import { END_NODE, IMMERSIVE_OPEN_NODE, RouteSchema, makeRouteValidator } from "./route.schema";
 import { buildSupervisorPrompt } from "./supervisor.prompt";
 import { buildJsonSchema } from "../tool-factory";
 import type { VegaStateType } from "./state";
+import { ImmersiveDomainRegistry } from "../../immersive/immersive-domain.registry";
+import { EarSessionRouter } from "../../sessions/ear-session-router.service";
 
 interface RouteOutput {
   goto: string;
@@ -24,6 +26,8 @@ export class SupervisorNode {
     @InjectPinoLogger(SupervisorNode.name) private readonly logger: PinoLogger,
     private readonly registry: AgentRegistry,
     private readonly llm: LlmService,
+    private readonly immersiveRegistry: ImmersiveDomainRegistry,
+    private readonly earSessionRouter: EarSessionRouter,
   ) {}
 
   asNode(): (state: VegaStateType) => Promise<Command> {
@@ -33,8 +37,13 @@ export class SupervisorNode {
   async run(state: VegaStateType): Promise<Command> {
     const domains = this.registry.metaForSupervisor();
     const activeNames = domains.map((d) => d.name);
-    const systemPrompt = buildSupervisorPrompt({ domains, memoryHints: state.memoryHints });
-    const validator = makeRouteValidator(activeNames);
+    const immersiveDomains = this.immersiveRegistry.list();
+    const systemPrompt = buildSupervisorPrompt({
+      domains,
+      memoryHints: state.memoryHints,
+      immersiveDomains,
+    });
+    const validator = makeRouteValidator(activeNames, immersiveDomains);
 
     const baseMessages: BaseMessage[] = [
       new SystemMessage(systemPrompt),
@@ -42,7 +51,7 @@ export class SupervisorNode {
     ];
     ensureEndsWithHuman(baseMessages);
 
-    const route = await this.callRouter(baseMessages, activeNames, validator);
+    const route = await this.callRouter(baseMessages, activeNames, immersiveDomains, validator);
     if (!route) {
       this.logger.warn({}, "Supervisor falling back to clarification reply");
       return new Command({
@@ -58,6 +67,28 @@ export class SupervisorNode {
         goto: END,
         update: { messages: [new AIMessage(text)] },
       });
+    }
+
+    if (route.goto === IMMERSIVE_OPEN_NODE) {
+      const domain = (route.task ?? "").trim();
+      const reg = this.immersiveRegistry.get(domain);
+      if (!reg) {
+        this.logger.warn(
+          { domain, available: immersiveDomains },
+          "Supervisor picked immersive_open with unknown domain",
+        );
+        return new Command({ goto: END, update: { messages: [new AIMessage("")] } });
+      }
+      const armResult = this.earSessionRouter.arm({
+        ownerSpec: reg.sessionSpec,
+        mode: "immersive",
+        intent: `immersive:${domain}`,
+      });
+      this.logger.info(
+        { domain, armResult },
+        "Supervisor opened immersive session",
+      );
+      return new Command({ goto: END, update: { messages: [new AIMessage("")] } });
     }
 
     const task = route.task ?? "";
@@ -81,6 +112,7 @@ export class SupervisorNode {
   private async callRouter(
     messages: BaseMessage[],
     activeDomains: string[],
+    immersiveDomains: string[],
     validator: (raw: unknown) => string[],
   ): Promise<RouteOutput | null> {
     // Supervisor routing is a cheap "pick a domain" decision — haiku is
@@ -93,11 +125,18 @@ export class SupervisorNode {
     // constrain `goto` to the actual choices.
     const props = (schema as any).properties as Record<string, any>;
     if (props?.goto) {
-      props.goto.enum = [...activeDomains, END_NODE];
-      props.goto.description = 'Domain name or "__end__".';
+      const gotoEnum: string[] = [...activeDomains, END_NODE];
+      if (immersiveDomains.length > 0) gotoEnum.push(IMMERSIVE_OPEN_NODE);
+      props.goto.enum = gotoEnum;
+      props.goto.description = immersiveDomains.length > 0
+        ? 'Domain name, "__end__", or "__immersive_open__".'
+        : 'Domain name or "__end__".';
     }
     if (props?.task) {
-      props.task.description = "Natural-language task description (required when goto is a domain).";
+      props.task.description =
+        immersiveDomains.length > 0
+          ? "Natural-language task description (required when goto is a domain); immersive-domain name when goto is __immersive_open__."
+          : "Natural-language task description (required when goto is a domain).";
     }
     if (props?.speakText) {
       props.speakText.description = 'Always "" — TTS is not wired yet.';

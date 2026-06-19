@@ -52,3 +52,10 @@ export class ShoppingIntentDto {
   intent!: string;
 }
 
+export class CloseImmersiveSessionDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  intent?: string;
+}
+

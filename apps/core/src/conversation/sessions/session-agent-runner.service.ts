@@ -6,6 +6,8 @@ import type { BaseMessage } from "@langchain/core/messages";
 import type { AgentSpec } from "../kernel/agent.types";
 import { LlmService } from "../../integrations/llm/llm.module";
 import { EnvConfig } from "../../config/env";
+import { OverlayService } from "../overlay/overlay.service";
+import { isWakeWordFinal } from "../ear/wake/wake-vocabulary";
 import {
   EarSessionHandle,
   isSessionReleaseResult,
@@ -13,6 +15,7 @@ import {
 } from "./ear-session-handle";
 
 type ReleaseReason = SessionToolResult["reason"];
+type RunnerStrategy = "continuous-finalize" | "per-final-turn";
 
 export interface RunnerSessionCallbacks {
   onRelease: (
@@ -22,6 +25,9 @@ export interface RunnerSessionCallbacks {
   ) => Promise<void> | void;
   onFlush?: (sessionId: string, initiator: string) => Promise<void> | void;
   onFinalAppend?: (sessionId: string, text: string) => void | Promise<void>;
+  // Per-final-turn strategy only: fired before/after each agent.invoke so
+  // SessionService can suspend the silence cap while the LLM is thinking.
+  onInFlightChange?: (inFlight: boolean) => void;
 }
 
 export interface SessionRunnerController {
@@ -36,6 +42,7 @@ interface RunnerState {
   spec: AgentSpec;
   callbacks: RunnerSessionCallbacks;
   agent: ReturnType<typeof createReactAgent>;
+  strategy: RunnerStrategy;
   rolling: string[];
   pauseTimer: NodeJS.Timeout | null;
   safetyTimer: NodeJS.Timeout | null;
@@ -44,6 +51,9 @@ interface RunnerState {
   released: boolean;
   pauseMs: number;
   terminalQueued: { reason: "user" | "endpoint" | "timeout" | "stt_error"; note: string } | null;
+  // Per-final-turn strategy: serial tail-promise so concurrent
+  // pushFinal calls queue rather than interleave agent.invoke.
+  queueTail: Promise<void>;
 }
 
 @Injectable()
@@ -52,6 +62,7 @@ export class SessionAgentRunner {
     @InjectPinoLogger(SessionAgentRunner.name) private readonly logger: PinoLogger,
     private readonly llm: LlmService,
     private readonly env: EnvConfig,
+    private readonly overlay: OverlayService,
   ) {}
 
   start(args: {
@@ -66,11 +77,15 @@ export class SessionAgentRunner {
       prompt: args.spec.systemPrompt,
     });
 
+    const strategy: RunnerStrategy =
+      args.handle.mode === "immersive" ? "per-final-turn" : "continuous-finalize";
+
     const state: RunnerState = {
       handle: args.handle,
       spec: args.spec,
       callbacks: args.callbacks,
       agent,
+      strategy,
       rolling: [],
       pauseTimer: null,
       safetyTimer: null,
@@ -79,14 +94,15 @@ export class SessionAgentRunner {
       released: false,
       pauseMs: this.env.earSessionPauseMs,
       terminalQueued: null,
+      queueTail: Promise.resolve(),
     };
 
-    // Wall-clock cap on the owning sub-agent loop. Continuous-mode
-    // sessions skip it entirely — the user is actively dictating and the
-    // SessionService silence cap (60 s, resets on activity) plus the
-    // sub-agent's own finalize/discard decisions cover lifecycle. The
-    // runner cap stays as a backstop only for regular owned sessions.
-    if (args.handle.mode !== "continuous") {
+    // Wall-clock cap on the owning sub-agent loop. Continuous-mode and
+    // immersive-mode sessions skip it entirely — they have their own
+    // silence caps and (for immersive) per-turn abort timeouts that
+    // cover liveness. The runner cap stays as a backstop only for
+    // regular owned sessions.
+    if (args.handle.mode !== "continuous" && args.handle.mode !== "immersive") {
       state.safetyTimer = setTimeout(
         () => this.onSafetyCap(state),
         this.env.earSessionOwnerCapMs,
@@ -97,8 +113,9 @@ export class SessionAgentRunner {
       {
         sessionId: state.handle.sessionId,
         owner: args.spec.name,
-        ownerCapMs: args.handle.mode === "continuous" ? null : this.env.earSessionOwnerCapMs,
+        ownerCapMs: state.safetyTimer ? this.env.earSessionOwnerCapMs : null,
         mode: args.handle.mode,
+        strategy,
         pauseMs: state.pauseMs,
       },
       "Session agent runner started",
@@ -114,6 +131,10 @@ export class SessionAgentRunner {
 
   private onPushFinal(state: RunnerState, text: string): void {
     if (state.released) return;
+    if (state.strategy === "per-final-turn") {
+      this.onPushFinalImmersive(state, text);
+      return;
+    }
     const trimmed = text.trim();
     if (trimmed.length === 0) return;
     state.rolling.push(trimmed);
@@ -279,9 +300,119 @@ export class SessionAgentRunner {
 
   private onSignalEnd(state: RunnerState, reason: "user" | "endpoint" | "timeout" | "stt_error"): void {
     if (state.released) return;
+    if (state.strategy === "per-final-turn") {
+      // No terminal-check in per-final-turn: every final was already a
+      // committed turn (tool ran inline). Just release with the reason.
+      this.cancelInflight(state);
+      void this.releaseFromTool(state, reason);
+      return;
+    }
     this.cancelInflight(state);
     const rolling = state.rolling.join(" ").trim();
     void this.runTerminalCheck(state, reason, rolling);
+  }
+
+  // Per-final-turn strategy: each pushFinal triggers an immediate
+  // sequential agent.invoke. No pause-prompt, no rolling accumulation,
+  // no finalize/terminal decision. Tool results (e.g.
+  // close_immersive_session) are parsed for release markers.
+  private onPushFinalImmersive(state: RunnerState, text: string): void {
+    if (state.released) return;
+    const trimmed = text.trim();
+    if (trimmed.length === 0) return;
+    if (isWakeWordFinal(trimmed)) {
+      this.logger.info(
+        { sessionId: state.handle.sessionId, finalText: trimmed },
+        "Per-final-turn: dropping wake-only final",
+      );
+      return;
+    }
+    const previous = state.queueTail;
+    state.queueTail = previous.then(() => this.runImmersiveTurn(state, trimmed));
+    state.queueTail.catch(() => undefined);
+  }
+
+  private async runImmersiveTurn(state: RunnerState, text: string): Promise<void> {
+    if (state.released) return;
+    const abort = new AbortController();
+    state.currentAbort = abort;
+    const timeoutMs = this.env.immersiveTurnTimeoutMs;
+    const timeoutHandle = setTimeout(() => abort.abort(new Error("immersive-turn-timeout")), timeoutMs);
+    try { state.callbacks.onInFlightChange?.(true); } catch { /* ignore */ }
+    const startedAt = Date.now();
+    this.logger.info(
+      {
+        sessionId: state.handle.sessionId,
+        owner: state.spec.name,
+        model: state.spec.model ?? "default",
+        phase: "immersive_turn",
+        finalText: text.slice(0, 160),
+      },
+      "LLM → session-agent (immersive)",
+    );
+    try {
+      const result = (await state.agent.invoke(
+        { messages: [new HumanMessage(text)] },
+        {
+          configurable: {
+            thread_id: `ear-session:${state.handle.sessionId}`,
+            ear_session: state.handle,
+          },
+          signal: abort.signal,
+        },
+      )) as { messages: BaseMessage[] };
+      if (state.released) return;
+      const release = findReleaseInLastMessages(result.messages);
+      const tokens = sumRunnerUsage(result.messages);
+      this.logger.info(
+        {
+          sessionId: state.handle.sessionId,
+          owner: state.spec.name,
+          phase: "immersive_turn",
+          ms: Date.now() - startedAt,
+          inputTokens: tokens.input,
+          outputTokens: tokens.output,
+          release: release?.reason,
+        },
+        "LLM ← session-agent (immersive)",
+      );
+      if (release) {
+        await this.releaseFromTool(state, release.reason);
+      }
+    } catch (err) {
+      if (abort.signal.aborted && abort.signal.reason instanceof Error && abort.signal.reason.message === "immersive-turn-timeout") {
+        this.logger.warn(
+          { sessionId: state.handle.sessionId, timeoutMs },
+          "Immersive turn timed out, aborting invoke",
+        );
+        this.overlay.set(
+          state.handle.deviceId,
+          { kind: "error", hint: "Долго думаю", sound: "ack_error" },
+          { ttl: 1800 },
+          "immersive_turn_timeout",
+        );
+      } else if (abort.signal.aborted) {
+        this.logger.debug(
+          { sessionId: state.handle.sessionId },
+          "Immersive turn aborted",
+        );
+      } else {
+        this.logger.error(
+          { err, sessionId: state.handle.sessionId, owner: state.spec.name },
+          "Immersive agent invocation threw",
+        );
+        this.overlay.set(
+          state.handle.deviceId,
+          { kind: "error", hint: "Сбой", sound: "ack_error" },
+          { ttl: 1800 },
+          "immersive_turn_error",
+        );
+      }
+    } finally {
+      clearTimeout(timeoutHandle);
+      if (state.currentAbort === abort) state.currentAbort = null;
+      try { state.callbacks.onInFlightChange?.(false); } catch { /* ignore */ }
+    }
   }
 
   private async runTerminalCheck(

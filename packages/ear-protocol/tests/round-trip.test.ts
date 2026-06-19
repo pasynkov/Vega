@@ -48,6 +48,13 @@ const cases = [
   { name: "core session_end with detail", schema: CoreSessionEndMessageSchema, key: "core_session_end_with_detail" },
   { name: "session_mode continuous", schema: SessionModeChangeMessageSchema, key: "session_mode_continuous" },
   { name: "arm_capture continuous", schema: ArmCaptureMessageSchema, key: "arm_capture_continuous" },
+  { name: "arm_capture ask", schema: ArmCaptureMessageSchema, key: "arm_capture_ask" },
+  { name: "overlay listening ask", schema: OverlayUpdateMessageSchema, key: "overlay_update_listening_ask" },
+  { name: "session_start ask", schema: SessionStartMessageSchema, key: "session_start_ask" },
+  { name: "session_start immersive", schema: SessionStartMessageSchema, key: "session_start_immersive" },
+  { name: "arm_capture immersive", schema: ArmCaptureMessageSchema, key: "arm_capture_immersive" },
+  { name: "session_mode immersive", schema: SessionModeChangeMessageSchema, key: "session_mode_immersive" },
+  { name: "overlay immersive", schema: OverlayUpdateMessageSchema, key: "overlay_update_immersive" },
 ] as const;
 
 describe("per-event round-trip", () => {
@@ -73,8 +80,8 @@ describe("EventName catalog", () => {
 });
 
 describe("overlay bounds and rules", () => {
-  it("accepts every overlay kind including view", () => {
-    const kinds = ["idle", "listening", "capturing", "thinking", "processing", "success", "error", "view"];
+  it("accepts every overlay kind including view and immersive", () => {
+    const kinds = ["idle", "listening", "capturing", "thinking", "processing", "success", "error", "view", "immersive"];
     for (const kind of kinds) {
       expect(OverlayStateSchema.safeParse({ kind }).success).toBe(true);
     }
@@ -82,6 +89,10 @@ describe("overlay bounds and rules", () => {
 
   it("rejects wake in state.sound", () => {
     expect(OverlayStateSchema.safeParse({ kind: "listening", sound: "wake" }).success).toBe(false);
+  });
+
+  it("accepts cue_listen in state.sound", () => {
+    expect(OverlayStateSchema.safeParse({ kind: "listening", sound: "cue_listen" }).success).toBe(true);
   });
 
   it("rejects hint > 120 chars", () => {

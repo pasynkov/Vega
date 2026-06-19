@@ -57,3 +57,25 @@ export function buildShoppingSupervisorSpec(tools: AgentTool[]): AgentSpec {
     model: "claude-haiku-4-5-20251001",
   };
 }
+
+// Session-spec for immersive mode. Same tool map + close_immersive_session.
+// Lives parallel to supervisor-spec by design — see
+// openspec/changes/immersive-domain-mode/design.md (decision A / a1).
+const SESSION_SYSTEM_PROMPT = `${SYSTEM_PROMPT}
+
+ДОПОЛНИТЕЛЬНОЕ ПРАВИЛО ДЛЯ IMMERSIVE-СЕССИИ:
+- "закрой покупки" / "закрой список" / "хватит" / "выходим" / "закончил" / "отмена" → close_immersive_session({intent: краткое описание}).
+  После close_immersive_session НИЧЕГО больше не вызывай, ход закончен.`;
+
+export function buildShoppingSessionSpec(tools: AgentTool[]): AgentSpec {
+  return {
+    name: "shopping-session",
+    description:
+      "Session-bound shopping-агент: владеет immersive-сессией, обрабатывает per-final команды списка, умеет завершить сессию по голосу.",
+    examples: EXAMPLES,
+    systemPrompt: SESSION_SYSTEM_PROMPT,
+    tools,
+    enabled: true,
+    model: "claude-haiku-4-5-20251001",
+  };
+}

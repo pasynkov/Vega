@@ -62,6 +62,7 @@ export const OverlaySoundEnum = z.enum([
   "ack_success",
   "ack_error",
   "ack_unknown",
+  "cue_listen",
 ]);
 export type OverlaySound = z.infer<typeof OverlaySoundEnum>;
 
@@ -74,6 +75,7 @@ export const OverlayKindEnum = z.enum([
   "success",
   "error",
   "view",
+  "immersive",
 ]);
 export type OverlayKind = z.infer<typeof OverlayKindEnum>;
 
@@ -85,7 +87,7 @@ export const OverlayStateSchema = z.object({
 });
 export type OverlayState = z.infer<typeof OverlayStateSchema>;
 
-export const SessionModeEnum = z.enum(["regular", "continuous"]);
+export const SessionModeEnum = z.enum(["regular", "continuous", "ask", "immersive"]);
 export type SessionMode = z.infer<typeof SessionModeEnum>;
 
 export const WakeActionEnum = z.enum(["proceed", "yield"]);
@@ -210,5 +212,6 @@ export type SessionModeChangeMessage = z.infer<typeof SessionModeChangeMessageSc
 // `session_start` with the same `mode` field set.
 export const ArmCaptureMessageSchema = z.object({
   mode: SessionModeEnum,
+  captureMs: z.number().int().positive().optional(),
 });
 export type ArmCaptureMessage = z.infer<typeof ArmCaptureMessageSchema>;

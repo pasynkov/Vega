@@ -66,6 +66,8 @@ export class EnvConfig {
   readonly sessionTimeoutMs: number = intEnv("SESSION_TIMEOUT_MS", 30_000);
   readonly earSessionOwnerCapMs: number = intEnv("EAR_SESSION_OWNER_CAP_MS", 90_000);
   readonly earSessionPauseMs: number = intEnv("EAR_SESSION_PAUSE_MS", 3_000);
+  readonly immersiveSilenceCapMs: number = intEnv("IMMERSIVE_SILENCE_CAP_MS", 15_000);
+  readonly immersiveTurnTimeoutMs: number = intEnv("IMMERSIVE_TURN_TIMEOUT_MS", 20_000);
   readonly recordingsDir: string = resolveRecordingsDir();
   readonly vegaDbPath: string = resolveDbPath(this.recordingsDir);
   readonly llmPingOnBoot: boolean = process.env.VEGA_LLM_PING_ON_BOOT === "1";
