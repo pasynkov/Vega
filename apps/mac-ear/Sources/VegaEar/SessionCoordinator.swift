@@ -13,6 +13,8 @@ final class SessionCoordinator {
     private let overlay: OverlayWindowController
     private let regularSafetyCapMs: Int = 30_000
     private let continuousModeSafetyCapMs: Int = 60_000
+    private let immersiveModeSafetyCapMs: Int = 60_000
+    private let askDefaultCaptureMs: Int = 8_000
 
     private let serial = DispatchQueue(label: "vega.ear.coordinator")
     private var activeSessionId: String?
@@ -23,6 +25,7 @@ final class SessionCoordinator {
     private var bytesSentInSession = 0
     private var silenceDetector: SilenceDetector?
     private var sessionMode: SessionMode = .regular
+    private var askCaptureMs: Int = 0
     var onSessionStateChange: ((Bool) -> Void)?
     private var sinkCallbackCount = 0
 
@@ -54,18 +57,23 @@ final class SessionCoordinator {
         socket.handlers.onFinalTranscript = { [weak self] m in self?.handleFinal(m) }
         socket.handlers.onOverlayUpdate = { [weak self] m in self?.applyOverlayUpdate(m) }
         socket.handlers.onListViewUpdate = { [weak self] m in self?.applyListViewUpdate(m) }
-        socket.handlers.onArmCapture = { [weak self] m in self?.handleArmCapture(mode: m.mode) }
+        socket.handlers.onArmCapture = { [weak self] m in
+            self?.handleArmCapture(mode: m.mode, captureMs: m.captureMs)
+        }
         socket.handlers.onSessionMode = { [weak self] m in
             self?.serial.async { self?.applySessionMode(m) }
         }
         socket.handlers.onSessionEnd = { [weak self] m in self?.handleSessionEnd(m) }
         socket.onStatusChange = { [weak self] connected in
             self?.status.setState(connected ? .idle : .error("Core unreachable"))
-            if !connected {
-                // Drop overlay + list view immediately on disconnect — no
-                // server state ahead, no in-flight state worth keeping.
-                DispatchQueue.main.async { self?.overlay.viewModel.hide() }
-            }
+            // Reset overlay state on BOTH transitions:
+            //   - disconnect: in-flight state is moot
+            //   - connect: backend just rebound the overlay channel and its
+            //     seq counter restarted at 0. Without resetting here, our
+            //     `lastOverlaySeq` may still hold a high value from before
+            //     the backend crashed, and every fresh overlay_update gets
+            //     dropped as stale (sound plays, visual never updates).
+            DispatchQueue.main.async { self?.overlay.viewModel.hide() }
         }
 
         audio.addSink { [weak self] pcm in
@@ -189,7 +197,7 @@ final class SessionCoordinator {
         }
     }
 
-    private func handleArmCapture(mode: SessionMode) {
+    private func handleArmCapture(mode: SessionMode, captureMs: Int?) {
         serial.async {
             guard !self.paused else { return }
             guard self.activeSessionId == nil else {
@@ -203,12 +211,20 @@ final class SessionCoordinator {
             self.rmsLastReportAt = Date()
             self.silenceDetector = SilenceDetector()
             self.sessionMode = mode
-            self.silenceDetector?.setEndpointSuppressed(mode == .continuous)
-            NSLog("[VegaEar] arm_capture: starting session=\(sessionId) mode=\(mode.rawValue)")
+            // VAD endpoint is suppressed for both continuous and ask modes:
+            // continuous wants long dictation without auto-cut; ask wants
+            // the first single final to come from Deepgram without local
+            // VAD pre-empting a short answer.
+            self.silenceDetector?.setEndpointSuppressed(mode == .continuous || mode == .ask || mode == .immersive)
+            self.askCaptureMs = mode == .ask ? (captureMs ?? self.askDefaultCaptureMs) : 0
+            NSLog("[VegaEar] arm_capture: starting session=\(sessionId) mode=\(mode.rawValue) captureMs=\(self.askCaptureMs)")
 
-            // Cue: continuous plays Submarine (ack_continue), regular plays wake.
+            // Cue: continuous and immersive both play Submarine (ack_continue)
+            // — the "long session opened" auditory signal. ask plays Tink
+            // (cue_listen), regular plays wake.
             switch mode {
-            case .continuous: self.cues.play(.ackContinue)
+            case .continuous, .immersive: self.cues.play(.ackContinue)
+            case .ask: self.cues.play(.cueListen)
             case .regular: self.cues.play(.wake)
             }
 
@@ -293,7 +309,23 @@ final class SessionCoordinator {
     }
 
     private func armSafetyTimer(for sessionId: String) {
-        let capMs = sessionMode == .continuous ? continuousModeSafetyCapMs : regularSafetyCapMs
+        // Immersive sessions have no Ear-side wall-clock cap: the user
+        // "lives" in the domain until they explicitly close it by voice
+        // or Core's silence cap (15s of no STT activity, paused while
+        // the domain agent is mid-invoke) terminates from the server.
+        // A 60s Ear cap here would kick the user out mid-conversation.
+        if sessionMode == .immersive {
+            safetyTimer?.cancel()
+            safetyTimer = nil
+            return
+        }
+        let capMs: Int
+        switch sessionMode {
+        case .continuous: capMs = continuousModeSafetyCapMs
+        case .immersive: capMs = immersiveModeSafetyCapMs
+        case .ask: capMs = askCaptureMs > 0 ? askCaptureMs : askDefaultCaptureMs
+        case .regular: capMs = regularSafetyCapMs
+        }
         safetyTimer?.cancel()
         let timer = DispatchSource.makeTimerSource(queue: serial)
         timer.schedule(deadline: .now() + .milliseconds(capMs))
@@ -392,6 +424,7 @@ final class SessionCoordinator {
         case .ackSuccess:   cues.play(.ackSuccess)
         case .ackError:     cues.play(.ackError)
         case .ackUnknown:   cues.play(.ackUnknown)
+        case .cueListen:    cues.play(.cueListen)
         }
     }
 
@@ -411,6 +444,8 @@ final class SessionCoordinator {
 
     private func bumpSafetyOnTranscript(sessionId: String) {
         guard activeSessionId == sessionId, sessionMode == .continuous else { return }
+        // Ask mode does NOT reset its cap on partials — captureMs is a
+        // hard wall-clock budget for the user to start answering.
         armSafetyTimer(for: sessionId)
     }
 

@@ -20,14 +20,19 @@ export function buildOpenContinuousSessionTool(
     dto: OpenContinuousSessionDto,
     name: "open_continuous_session",
     description:
-      "Открой СВЕЖУЮ continuous-mode Ear-сессию (Submarine cue, ~60s silence cap), которой будет владеть session-bound агент текущего домена. Активная короткая Ear-сессия будет принудительно закрыта перед тем как Ear получит arm_capture. Используй ТОЛЬКО когда домену реально нужна длинная сессия захвата.",
-    handler: async () => {
+      "Открой СВЕЖУЮ continuous-mode Ear-сессию (Submarine cue, ~60s silence cap), которой будет владеть session-bound агент текущего домена. Обязательно укажи name — пользовательское имя артефакта (например, имя заметки), оно идёт в имя файла и в caption оверлея. intent — короткое описание для логов. Активная короткая Ear-сессия будет принудительно закрыта перед тем как Ear получит arm_capture. Используй ТОЛЬКО когда домену реально нужна длинная сессия захвата.",
+    handler: async (dto) => {
       const spec = ownerSpecRef.spec;
       if (!spec) {
         return { ok: false, reason: "owner-session-spec-not-ready" };
       }
-      const result = router.arm({ ownerSpec: spec, mode: "continuous" });
-      return result;
+      const result = router.arm({
+        ownerSpec: spec,
+        mode: "continuous",
+        artifactName: dto.name,
+        intent: dto.intent,
+      });
+      return { ...result, artifactName: dto.name };
     },
   });
 }

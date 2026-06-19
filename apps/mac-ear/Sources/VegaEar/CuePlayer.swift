@@ -10,6 +10,7 @@ enum CueSound: String {
     case ackSuccess
     case ackError
     case ackUnknown
+    case cueListen
 
     var systemSoundPath: String {
         switch self {
@@ -22,6 +23,9 @@ enum CueSound: String {
         case .ackSuccess: return "/System/Library/Sounds/Glass.aiff"
         case .ackError: return "/System/Library/Sounds/Basso.aiff"
         case .ackUnknown: return "/System/Library/Sounds/Funk.aiff"
+        // Ask-session listening cue. Tink is short and unambiguous as a
+        // "I'm waiting for one short reply" tap.
+        case .cueListen: return "/System/Library/Sounds/Tink.aiff"
         }
     }
 }

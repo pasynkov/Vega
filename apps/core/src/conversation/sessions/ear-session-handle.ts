@@ -5,6 +5,7 @@ export interface EarSessionHandle {
   readonly deviceId: string;
   readonly mode: SessionMode;
   readonly arrivedAt: number;
+  readonly artifactName?: string;
 }
 
 export interface SessionToolResult {

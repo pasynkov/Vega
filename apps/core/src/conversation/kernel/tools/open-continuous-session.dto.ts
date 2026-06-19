@@ -1,10 +1,16 @@
-import { IsString, MinLength } from "class-validator";
+import { IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 
 export class OpenContinuousSessionDto {
-  // Marker DTO. Tools require non-empty schemas; the placeholder keeps the
-  // boot smoke happy while expressing "no input expected" beyond a
-  // free-form description of why the agent wants the continuous session.
+  // User-facing name of the artefact being captured (e.g. note title).
+  // Required. Flows through to storage (filename slug) and overlay caption.
   @IsString()
-  @MinLength(0)
-  intent!: string;
+  @MinLength(1)
+  @MaxLength(120)
+  name!: string;
+
+  // Short free-form description used for logs / future TTS hooks. Optional.
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  intent?: string;
 }

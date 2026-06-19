@@ -1,17 +1,15 @@
 import { makeTool } from "../../conversation/kernel/tool-factory";
 import { buildOpenContinuousSessionTool } from "../../conversation/kernel/tools/open-continuous-session.tool";
 import { buildUpdateOverlayTool } from "../../conversation/kernel/tools/update-overlay.tool";
+import { buildAskUserTool } from "../../conversation/kernel/tools/ask-user.tool";
 import type { AgentTool, AgentSpec } from "../../conversation/kernel/agent.types";
 import { SessionService } from "../../conversation/ear/session/session.service";
 import { EarSessionRouter } from "../../conversation/sessions/ear-session-router.service";
 import { ToolUsedOutsideSessionError } from "../../conversation/sessions/ear-session.errors";
 import { OverlayService } from "../../conversation/overlay/overlay.service";
+import { EarRegistry } from "../../conversation/ear/ear.registry";
 import { NotesStorageService } from "./notes-storage.service";
-import {
-  DiscardNoteDto,
-  FinalizeNoteDto,
-  SaveShortNoteDto,
-} from "./notes.dtos";
+import { DiscardNoteDto, FinalizeNoteDto } from "./notes.dtos";
 
 export interface NotesToolBundle {
   supervisorTools: AgentTool[];
@@ -23,32 +21,12 @@ export function buildNotesTools(
   sessions: SessionService,
   router: EarSessionRouter,
   overlay: OverlayService,
+  earRegistry: EarRegistry,
   sessionSpecRef: { spec: AgentSpec | null },
 ): NotesToolBundle {
-  const saveShortNote = makeTool({
-    dto: SaveShortNoteDto,
-    name: "save_short_note",
-    description:
-      "Persist a short dictated note to disk and acknowledge the user with a success overlay (auto-closes the session). Use for finished short notes (one or two sentences).",
-    handler: async (dto, ctx) => {
-      const { path } = storage.saveNote(dto.text);
-      if (ctx.sessionId) {
-        const deviceId = sessions.getDeviceIdForSession(ctx.sessionId);
-        if (deviceId) {
-          overlay.set(
-            deviceId,
-            { kind: "success", hint: "Готово", sound: "ack_done" },
-            { ttl: 1500 },
-            "notes:save_short_note_success",
-          );
-        }
-      }
-      return { ok: true, path };
-    },
-  });
-
   const openContinuousSession = buildOpenContinuousSessionTool(router, sessionSpecRef);
   const updateOverlay = buildUpdateOverlayTool(overlay, sessions);
+  const askUser = buildAskUserTool(router, sessions, overlay, earRegistry);
 
   const finalizeNote = makeTool({
     dto: FinalizeNoteDto,
@@ -87,7 +65,7 @@ export function buildNotesTools(
   });
 
   return {
-    supervisorTools: [saveShortNote, openContinuousSession, updateOverlay],
+    supervisorTools: [openContinuousSession, askUser, updateOverlay],
     sessionTools: [finalizeNote, discardNote, updateOverlay],
   };
 }

@@ -35,8 +35,8 @@ Detailed contracts (exact silence cap milliseconds, exact safety cap millisecond
 The notes domain SHALL expose the following tools to the orchestration graph and to its own session-bound sub-agent:
 
 - **Supervisor-visible**:
-  - `save_short_note(text)`: persist a short note in the post-endpoint flow. Side effect: writes to disk under `output/notes/`. Returned cue: `ack_done`.
-  - `open_continuous_session()`: reserve the next Ear session via `EarSessionRouter.arm({ ownerSpec: notesAgentSpec, mode: "continuous" })` and return the dispatch result. Replaces `enable_continuous_mode`. Returns success/failure of the arm dispatch. The Submarine cue is played by the Ear on receipt of `arm_capture`.
+  - `open_continuous_session({ name, intent? })`: reserve the next Ear session via `EarSessionRouter.arm({ ownerSpec: notesAgentSpec, mode: "continuous", artifactName: name })` and return the dispatch result. `name` is required — the short-note path has been removed and every note flows through a named continuous session. The Submarine cue is played by the Ear on receipt of `arm_capture`.
+  - `ask_user({ question, hint?, captureMs? })`: gather a single user reply via an ask-session — used when the user did not name the note in the original utterance. The notes agent SHALL fall back to this tool to obtain the name before calling `open_continuous_session`.
 
 - **Session-bound only (visible to the notes sub-agent inside `runSessionAgent`, NOT to the supervisor)**:
   - `append_text(text)`: append the supplied chunk to the in-progress note file. Idempotent on identical consecutive calls.
@@ -47,15 +47,9 @@ Persistence path SHALL remain `output/notes/YYYY-MM-DD_HH-mm-ss.md` with one fil
 
 The in-progress note file SHALL be opened when the first session-bound final is received (not at `open_continuous_session` time) so an aborted reservation does not leave empty files behind.
 
-#### Scenario: Short-note path
-
-- **WHEN** the supervisor routes a short utterance through `save_short_note`
-- **THEN** a file SHALL be written under `output/notes/`
-- **AND** the Ear SHALL play the `ack_done` cue
-
 #### Scenario: open_continuous_session arms a session
 
-- **WHEN** the supervisor calls `open_continuous_session`
+- **WHEN** the supervisor calls `open_continuous_session({ name: "идея проекта" })`
 - **THEN** the tool SHALL reserve the next Ear session via `EarSessionRouter`
 - **AND** SHALL dispatch `arm_capture` with `mode: "continuous"`
 - **AND** SHALL NOT itself open or write any file under `output/notes/`

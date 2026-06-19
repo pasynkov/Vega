@@ -6,7 +6,7 @@ import type { AgentSpec, AgentTool } from "../../src/conversation/kernel/agent.t
 
 function makeStubs() {
   const storage = {
-    saveNote: vi.fn(() => ({ path: "/tmp/short.md" })),
+    startNamed: vi.fn(() => ({ path: "/tmp/in-progress.md" })),
     appendChunk: vi.fn(() => ({ path: "/tmp/in-progress.md" })),
     finalizeInProgress: vi.fn(() => ({ path: "/tmp/done.md" })),
     discardInProgress: vi.fn(() => ({ path: null })),
@@ -14,10 +14,21 @@ function makeStubs() {
   };
   const sessions = { getDeviceIdForSession: vi.fn(() => undefined) } as any;
   const overlay = { set: vi.fn(() => true), cancelTtl: vi.fn() } as any;
-  const router = { arm: vi.fn(() => ({ ok: true, mode: "continuous" as const })) } as any;
+  const router = {
+    arm: vi.fn(() => ({ ok: true, mode: "continuous" as const })),
+    openAskSession: vi.fn(async () => ({ kind: "answer" as const, text: "имя" })),
+  } as any;
+  const earRegistry = { list: () => [{ deviceId: "dev-1" }] } as any;
   const sessionSpecRef: { spec: AgentSpec | null } = { spec: { name: "notes-session" } as AgentSpec };
-  const { supervisorTools, sessionTools } = buildNotesTools(storage as any, sessions, router, overlay, sessionSpecRef);
-  return { supervisorTools, sessionTools, storage, overlay };
+  const { supervisorTools, sessionTools } = buildNotesTools(
+    storage as any,
+    sessions,
+    router,
+    overlay,
+    earRegistry,
+    sessionSpecRef,
+  );
+  return { supervisorTools, sessionTools, storage, overlay, router };
 }
 
 function findTool(tools: AgentTool[], name: string): AgentTool {
@@ -49,17 +60,22 @@ describe("Session-bound notes tools require ear session ctx", () => {
     );
   });
 
-  it("save_short_note works without ear session ctx (supervisor-callable)", async () => {
-    const { supervisorTools, storage } = makeStubs();
-    const tool = findTool(supervisorTools, "save_short_note");
-    await invokeWithoutEarSession(tool, { text: "milk and bread" });
-    expect(storage.saveNote).toHaveBeenCalledWith("milk and bread");
+  it("open_continuous_session works without ear session ctx and forwards name", async () => {
+    const { supervisorTools, router } = makeStubs();
+    const tool = findTool(supervisorTools, "open_continuous_session");
+    const out = await invokeWithoutEarSession(tool, { name: "идея проекта", intent: "дневник" });
+    expect(typeof out === "string").toBe(true);
+    expect(router.arm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: "continuous",
+        artifactName: "идея проекта",
+        intent: "дневник",
+      }),
+    );
   });
 
-  it("open_continuous_session works without ear session ctx (it OPENS one)", async () => {
+  it("supervisor bundle exposes ask_user as a global tool", () => {
     const { supervisorTools } = makeStubs();
-    const tool = findTool(supervisorTools, "open_continuous_session");
-    const out = await invokeWithoutEarSession(tool, { intent: "long note" });
-    expect(typeof out === "string").toBe(true);
+    expect(supervisorTools.find((t) => t.name === "ask_user")).toBeTruthy();
   });
 });

@@ -23,14 +23,33 @@ function resolveNotesDir(): string {
   return resolve(process.cwd(), "output", "notes");
 }
 
-function timestampFilename(now: Date): string {
+function timestampToken(now: Date): string {
   const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   const dd = String(now.getDate()).padStart(2, "0");
   const hh = String(now.getHours()).padStart(2, "0");
   const mi = String(now.getMinutes()).padStart(2, "0");
   const ss = String(now.getSeconds()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}_${hh}-${mi}-${ss}.md`;
+  return `${yyyy}-${mm}-${dd}_${hh}-${mi}-${ss}`;
+}
+
+const SLUG_MAX = 60;
+const SLUG_FALLBACK = "note";
+
+// UTF-8 slug: lowercase, whitespace → "-", strip everything outside
+// letters/digits/hyphen, trim hyphen runs at edges, clamp to SLUG_MAX UTF-16
+// code units. Empty → "note". Cyrillic survives via \p{L}.
+export function slug(name: string): string {
+  const lowered = name.toLowerCase();
+  const dashed = lowered.replace(/\s+/g, "-");
+  const stripped = dashed.replace(/[^\p{L}\p{N}-]+/gu, "");
+  const collapsed = stripped.replace(/-+/g, "-").replace(/^-+|-+$/g, "");
+  const clamped = collapsed.slice(0, SLUG_MAX).replace(/-+$/g, "");
+  return clamped.length > 0 ? clamped : SLUG_FALLBACK;
+}
+
+function filenameFor(name: string, now: Date): string {
+  return `${slug(name)}_${timestampToken(now)}.md`;
 }
 
 @Injectable()
@@ -41,13 +60,20 @@ export class NotesStorageService {
 
   constructor(@InjectPinoLogger(NotesStorageService.name) private readonly logger: PinoLogger) {}
 
-  saveNote(text: string, now: Date = new Date()): { path: string } {
+  // Pre-allocate the in-progress file for a continuous notes session.
+  // Called from the EarSessionsModule session-begin hook so the file
+  // exists with the correct name before the first STT-final arrives.
+  startNamed(sessionId: string, name: string, now: Date = new Date()): { path: string } {
+    if (this.inProgress.has(sessionId)) {
+      return { path: this.inProgress.get(sessionId)! };
+    }
     mkdirSync(this.notesDir, { recursive: true });
-    const filename = timestampFilename(now);
+    const filename = filenameFor(name, now);
     const path = join(this.notesDir, filename);
-    const body = `_${now.toISOString()}_\n\n${text.trim()}\n`;
-    writeFileSync(path, body, "utf8");
-    this.logger.info({ path, bytes: body.length }, "Note saved");
+    const header = `_${now.toISOString()}_\n\n# ${name.trim()}\n\n`;
+    writeFileSync(path, header, "utf8");
+    this.inProgress.set(sessionId, path);
+    this.logger.info({ path, sessionId, name }, "Named in-progress note file started");
     return { path };
   }
 
@@ -61,13 +87,13 @@ export class NotesStorageService {
     }
     let path = this.inProgress.get(sessionId);
     if (!path) {
-      mkdirSync(this.notesDir, { recursive: true });
-      const filename = timestampFilename(now);
-      path = join(this.notesDir, filename);
-      const header = `_${now.toISOString()}_\n\n`;
-      writeFileSync(path, header, "utf8");
-      this.inProgress.set(sessionId, path);
-      this.logger.info({ path, sessionId }, "Started in-progress note file");
+      // Defensive fallback: session-begin hook should have called startNamed.
+      // If it didn't, allocate a "note" file so dictation is not lost.
+      this.logger.warn(
+        { sessionId },
+        "appendChunk: no startNamed for session, falling back to default name",
+      );
+      path = this.startNamed(sessionId, SLUG_FALLBACK, now).path;
     }
     appendFileSync(path, `${trimmed}\n`, "utf8");
     this.lastAppend.set(sessionId, trimmed);
@@ -79,7 +105,7 @@ export class NotesStorageService {
     cleanText: string,
     now: Date = new Date(),
   ): { path: string } {
-    const path = this.inProgress.get(sessionId) ?? join(this.notesDir, timestampFilename(now));
+    const path = this.inProgress.get(sessionId) ?? join(this.notesDir, filenameFor(SLUG_FALLBACK, now));
     mkdirSync(this.notesDir, { recursive: true });
     const body = `_${now.toISOString()}_\n\n${cleanText.trim()}\n`;
     writeFileSync(path, body, "utf8");

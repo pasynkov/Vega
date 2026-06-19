@@ -1,11 +1,5 @@
 import { IsIn, IsString, MinLength } from "class-validator";
 
-export class SaveShortNoteDto {
-  @IsString()
-  @MinLength(1)
-  text!: string;
-}
-
 export class FinalizeNoteDto {
   @IsString()
   @MinLength(1)
