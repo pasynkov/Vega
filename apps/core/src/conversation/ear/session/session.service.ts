@@ -444,6 +444,13 @@ export class SessionService {
         {},
         "stt_final_continuous",
       );
+    } else if (session.mode === "immersive" && session.ownerController) {
+      // Immersive: do NOT paint a transient "thinking" or "capturing"
+      // overlay. The orb is already in `kind: immersive` from
+      // sessionBegin (and list_view_update keeps the live content
+      // current). The domain agent's tools paint success/error states
+      // with ttl as side-effects of mutations. Painting thinking here
+      // would clobber the live immersive view on every final.
     } else {
       // Regular short-command session — paint thinking the moment the
       // final lands so the user gets immediate visual feedback while
@@ -507,7 +514,18 @@ export class SessionService {
         );
         return;
       }
-      void this.terminate(session, "endpoint", "core:silence_cap");
+      // Immersive: silence cap means the user fell silent inside the
+      // domain. Domain agent had nothing pending. Skip the
+      // thinking-with-Pop paint that terminate() does for natural ends
+      // — the immersive overlay should collapse straight to idle.
+      const silentOverlay = session.mode === "immersive";
+      void this.terminate(
+        session,
+        "endpoint",
+        "core:silence_cap",
+        undefined,
+        silentOverlay ? { silentOverlay: true } : undefined,
+      );
     }, session.silenceCapMs);
   }
 
