@@ -120,7 +120,12 @@ export class EarSessionsModule implements OnApplicationBootstrap {
       const hook = isImmersive ? undefined : this.flushHooks.get(ownerSpec.name);
       const finalAppend = isImmersive ? undefined : this.flushHooks.getFinalAppend(ownerSpec.name);
       if (isImmersive) {
-        const immersive = this.immersiveRegistry.get(ownerSpec.name);
+        // domainName is the registry key set by the supervisor's
+        // immersive-open path; ownerSpec.name is the AgentSpec name
+        // (e.g. "shopping-session") and does NOT match the registry
+        // key ("shopping"). Use domainName when available.
+        const immersiveKey = ownership.domainName ?? ownerSpec.name;
+        const immersive = this.immersiveRegistry.get(immersiveKey);
         if (immersive) {
           try {
             const r = immersive.sessionBegin(ownership.deviceId);

@@ -25,6 +25,7 @@ interface OwnerReservation {
   initialPrompt: string | undefined;
   artifactName: string | undefined;
   intent: string | undefined;
+  domainName: string | undefined;
   createdAt: number;
   expiresAt: number;
 }
@@ -49,6 +50,7 @@ interface OwnerActiveOwnership {
   initialPrompt: string | undefined;
   artifactName: string | undefined;
   intent: string | undefined;
+  domainName: string | undefined;
 }
 
 interface AskActiveOwnership {
@@ -68,6 +70,11 @@ export interface ArmOptions {
   initialPrompt?: string;
   artifactName?: string;
   intent?: string;
+  // Immersive only: the kebab-case domain key from ImmersiveDomainRegistry.
+  // ownerSpec.name is the AgentSpec name (e.g. "shopping-session"),
+  // which does NOT match the registry key ("shopping"). This field
+  // lets EarSessionsModule resolve sessionBegin on bind.
+  domainName?: string;
 }
 
 export interface ArmResult {
@@ -161,6 +168,7 @@ export class EarSessionRouter {
       initialPrompt: opts.initialPrompt,
       artifactName: opts.artifactName,
       intent: opts.intent,
+      domainName: opts.domainName,
       createdAt: now,
       expiresAt: now + RESERVATION_TTL_MS,
     });
@@ -350,6 +358,7 @@ export class EarSessionRouter {
       initialPrompt: reservation.initialPrompt,
       artifactName: reservation.artifactName,
       intent: reservation.intent,
+      domainName: reservation.domainName,
     };
     this.owned.set(message.sessionId, ownership);
     this.logger.info(

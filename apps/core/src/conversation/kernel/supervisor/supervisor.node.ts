@@ -77,18 +77,28 @@ export class SupervisorNode {
           { domain, available: immersiveDomains },
           "Supervisor picked immersive_open with unknown domain",
         );
-        return new Command({ goto: END, update: { messages: [new AIMessage("")] } });
+        // Name the AIMessage so ConversationService.wasActed returns true
+        // (otherwise the unknown-outcome overlay flashes red).
+        return new Command({
+          goto: END,
+          update: { messages: [new AIMessage({ content: "", name: "immersive_open" })] },
+        });
       }
       const armResult = this.earSessionRouter.arm({
         ownerSpec: reg.sessionSpec,
         mode: "immersive",
         intent: `immersive:${domain}`,
+        domainName: domain,
       });
       this.logger.info(
         { domain, armResult },
         "Supervisor opened immersive session",
       );
-      return new Command({ goto: END, update: { messages: [new AIMessage("")] } });
+      // Same naming reason — supervisor DID act (opened the session).
+      return new Command({
+        goto: END,
+        update: { messages: [new AIMessage({ content: "", name: "immersive_open" })] },
+      });
     }
 
     const task = route.task ?? "";
