@@ -44,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let encoder = PcmPassthroughEncoder()
             let cues = CuePlayer()
             let socket = EarSocket(
-                url: URL(string: "ws://127.0.0.1:7777/ear")!,
+                url: URL(string: "ws://127.0.0.1:7777")!,
                 deviceId: identity.deviceId,
                 deviceName: identity.deviceName
             )

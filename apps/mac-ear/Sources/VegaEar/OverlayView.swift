@@ -6,16 +6,22 @@ struct OverlayView: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            if let hint = vm.hint, !hint.isEmpty {
+            if vm.kind != .idle, let hint = vm.hint, !hint.isEmpty {
                 Text(hint)
                     .font(.callout)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
             }
-            Orb(kind: vm.kind)
-                .frame(width: 96, height: 96)
-            if let caption = vm.caption, !caption.isEmpty {
+            // Hide the orb entirely when kind=idle. If the list view is
+            // still open (post-success ttl → idle, list lingering), the
+            // panel keeps showing just the list section without an empty
+            // glyph circle on top.
+            if vm.kind != .idle {
+                Orb(kind: vm.kind)
+                    .frame(width: 96, height: 96)
+            }
+            if vm.kind != .idle, let caption = vm.caption, !caption.isEmpty {
                 Text(caption)
                     .font(.footnote)
                     .multilineTextAlignment(.center)

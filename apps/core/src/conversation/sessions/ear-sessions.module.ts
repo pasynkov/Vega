@@ -38,11 +38,27 @@ export class EarSessionsModule implements OnApplicationBootstrap {
   // overlay fades back to idle; ack/acted is a no-op (a domain handler
   // will paint its own success state via update_overlay).
   private paintOutcome(sessionId: string, outcome: TurnOutcome): void {
-    if (outcome === "acted") return;
-    const sound = this.soundForOutcome(outcome);
-    if (!sound) return;
     const deviceId = this.deviceIdForSession(sessionId) ?? this.fallbackDeviceId();
     if (!deviceId) return;
+    if (outcome === "acted") {
+      // Domain may have already painted a finishing success/error with
+      // ttl through update_overlay. Only fire the safety paint when the
+      // overlay is STILL stuck on `thinking` from terminate(endpoint)
+      // — i.e. the domain emitted no finishing state of its own. Don't
+      // flash success again over an already-completed domain ttl→idle.
+      if (this.overlay.hasTtlTimer?.(deviceId)) return;
+      const currentKind = this.overlay.getKind?.(deviceId);
+      if (currentKind !== "thinking") return;
+      this.overlay.set(
+        deviceId,
+        { kind: "success", sound: "ack_done" },
+        { ttl: 1200 },
+        "outcome_acted_safety",
+      );
+      return;
+    }
+    const sound = this.soundForOutcome(outcome);
+    if (!sound) return;
     const hint = outcome === "unknown" ? "Не понял запрос" : "Что-то пошло не так";
     const ttl = outcome === "unknown" ? 1500 : 2500;
     this.overlay.set(deviceId, { kind: "error", hint, sound }, { ttl }, `outcome_${outcome}`);

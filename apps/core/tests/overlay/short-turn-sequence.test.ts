@@ -77,13 +77,16 @@ describe("Short-turn overlay sequence: wake → thinking on terminate → idle o
     await svc.terminateExternal(SESSION_ID, "endpoint", "core:test");
 
     const overlayMessages = sentMessages.filter((m) => m.type === "overlay_update");
+    // listening (wake) → thinking (immediate, on STT final) →
+    // thinking (terminate adds caption + sound endpoint).
     expect(overlayMessages.map((m) => m.state.kind)).toEqual([
       "listening",
-      "thinking", // terminate paints thinking with the last final/partial as caption
+      "thinking",
+      "thinking",
     ]);
-    expect(overlayMessages[1].state.sound).toBe("endpoint");
-    expect(overlayMessages[1].state.caption).toBe("купить молоко");
-    expect(overlayMessages.map((m) => m.seq)).toEqual([1, 2]);
+    expect(overlayMessages[2].state.sound).toBe("endpoint");
+    expect(overlayMessages[2].state.caption).toBe("купить молоко");
+    expect(overlayMessages.map((m) => m.seq)).toEqual([1, 2, 3]);
   });
 
   it("silentOverlay terminate path does not paint thinking (used by ttl/arm flows)", async () => {

@@ -95,7 +95,7 @@ describe("SessionService long-note mode", () => {
     expect(svc.setSilenceCap("unknown-session", 1234)).toBe(false);
   });
 
-  it("addTranscriptListener fires on partial and final without overlay updates for a regular session", () => {
+  it("addTranscriptListener fires on partial and final; final paints thinking on regular session", () => {
     const events: Array<{ k: string; t: string }> = [];
     svc.addTranscriptListener((_sid, kind, text) => events.push({ k: kind, t: text }));
     const sid = "22222222-2222-2222-2222-222222222222";
@@ -106,9 +106,16 @@ describe("SessionService long-note mode", () => {
       { k: "partial", t: "hi" },
       { k: "final", t: "hello there" },
     ]);
-    // Regular (non-continuous) sessions do NOT push captions to the overlay
-    // on partial/final — the overlay stays in its current visual.
-    expect(overlay.set).not.toHaveBeenCalled();
+    // Regular session: partial does NOT paint, final paints thinking
+    // (no caption) so the user sees immediate "I heard you" feedback
+    // while the orchestrator dispatches.
+    expect(overlay.set).toHaveBeenCalledTimes(1);
+    expect(overlay.set).toHaveBeenCalledWith(
+      "dev-1",
+      { kind: "thinking" },
+      {},
+      "stt_final_regular",
+    );
   });
 
   it("continuous mode + owner: each final paints a capturing caption", () => {

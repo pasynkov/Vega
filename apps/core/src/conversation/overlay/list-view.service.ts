@@ -7,7 +7,7 @@ import {
 } from "@vega/ear-protocol";
 import { OverlayService } from "./overlay.service";
 
-const AUTO_CLOSE_MS = 60_000;
+const AUTO_CLOSE_MS = 10_000;
 
 type Sender = (event: string, payload: ListViewUpdateMessage) => void;
 

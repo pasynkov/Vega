@@ -124,16 +124,12 @@ export class EarGateway
         }
       },
       async () => {
-        const sid = this.sessions.getActiveSessionIdForDevice(message.deviceId);
-        if (sid) {
-          await this.sessions.terminateExternal(
-            sid,
-            "endpoint",
-            "core:overlay_ttl",
-            undefined,
-            { silentOverlay: true },
-          );
-        }
+        // ttl from update_overlay must drive overlay-only lifecycle.
+        // It MUST NOT terminate the active capture session — that
+        // would cut the user mid-utterance whenever a domain paints
+        // a quick success/ttl (e.g. shopping add_item emits
+        // success ttl=1500 while the user keeps dictating more items).
+        // The session closes through its own VAD / safety paths.
         this.overlay.set(message.deviceId, { kind: "idle" }, {}, "overlay_ttl_idle");
       },
     );

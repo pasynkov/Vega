@@ -61,6 +61,11 @@ final class SessionCoordinator {
         socket.handlers.onSessionEnd = { [weak self] m in self?.handleSessionEnd(m) }
         socket.onStatusChange = { [weak self] connected in
             self?.status.setState(connected ? .idle : .error("Core unreachable"))
+            if !connected {
+                // Drop overlay + list view immediately on disconnect — no
+                // server state ahead, no in-flight state worth keeping.
+                DispatchQueue.main.async { self?.overlay.viewModel.hide() }
+            }
         }
 
         audio.addSink { [weak self] pcm in

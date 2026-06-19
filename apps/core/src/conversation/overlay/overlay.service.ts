@@ -18,6 +18,7 @@ interface DeviceBinding {
   terminateSession: SessionTerminator;
   seq: number;
   ttlTimer: NodeJS.Timeout | null;
+  lastKind: string | null;
 }
 
 @Injectable()
@@ -37,6 +38,7 @@ export class OverlayService {
       terminateSession,
       seq: 0,
       ttlTimer: null,
+      lastKind: null,
     });
     this.logger.info({ deviceId }, "overlay.bindDevice");
   }
@@ -84,6 +86,7 @@ export class OverlayService {
     }
 
     binding.seq += 1;
+    binding.lastKind = validated.data.kind;
     const message: OverlayUpdateMessage = {
       seq: binding.seq,
       state: validated.data,
@@ -142,5 +145,9 @@ export class OverlayService {
 
   hasTtlTimer(deviceId: string): boolean {
     return !!this.byDevice.get(deviceId)?.ttlTimer;
+  }
+
+  getKind(deviceId: string): string | undefined {
+    return this.byDevice.get(deviceId)?.lastKind ?? undefined;
   }
 }

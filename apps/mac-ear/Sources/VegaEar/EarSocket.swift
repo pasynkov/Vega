@@ -53,10 +53,14 @@ final class EarSocket {
     }
 
     func connect() {
-        manager.connect()
+        // Connecting on the namespace-socket (not manager.connect())
+        // is what actually joins `/ear`. manager.connect() would only
+        // join the default `/` namespace.
+        socket.connect()
     }
 
     func disconnect() {
+        socket.disconnect()
         manager.disconnect()
         onStatusChange?(false)
     }
@@ -96,8 +100,19 @@ final class EarSocket {
         socket.on(clientEvent: .reconnect) { _, _ in
             NSLog("[VegaEar] socket.io reconnecting")
         }
-        socket.on(clientEvent: .error) { _, data in
-            NSLog("[VegaEar] socket.io error: \(data)")
+        socket.on(clientEvent: .error) { data, _ in
+            // socket.io-client-swift `.error` data carries a free-form
+            // payload; print only the textual / dictionary parts so we
+            // don't flood the log with SocketAckEmitter pointer descs.
+            let textual = data.compactMap { item -> String? in
+                if let s = item as? String { return s }
+                if let d = item as? [String: Any] { return "\(d)" }
+                if let e = item as? Error { return e.localizedDescription }
+                return nil
+            }
+            if !textual.isEmpty {
+                NSLog("[VegaEar] socket.io error: \(textual.joined(separator: " | "))")
+            }
         }
     }
 

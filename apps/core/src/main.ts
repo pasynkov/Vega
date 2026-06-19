@@ -17,7 +17,10 @@ async function bootstrap(): Promise<void> {
   app.useWebSocketAdapter(new EarIoAdapter(app));
 
   const env = app.get(EnvConfig);
-  await app.init();
+  // Bind the Nest HTTP server to env.earWsPort on env.earWsHost —
+  // socket.io rides on top of this server, so without listen() the
+  // socket.io adapter never accepts connections.
+  await app.listen(env.earWsPort, env.earWsHost);
 
   const logger = app.get(Logger);
   logger.log(

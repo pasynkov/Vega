@@ -46,14 +46,17 @@ function buildSnapshot(
   };
 }
 
-async function refreshIfOpen(
+// After any mutation we always refresh the list view, even if it
+// wasn't open — the result of a shopping command IS the current list
+// shown below the success message. The orb shows `kind: success +
+// hint`; the list section shows the live snapshot.
+async function refreshAlways(
   deviceId: string | undefined,
   storage: ShoppingStorageService,
   listView: ListViewService,
   origin: string,
 ): Promise<void> {
   if (!deviceId) return;
-  if (!listView.isOpen(deviceId)) return;
   const items = await storage.listLive();
   listView.refresh(deviceId, buildSnapshot(storage, items), origin);
 }
@@ -78,7 +81,9 @@ export function buildShoppingTools(
         note: dto.note ?? null,
       });
       const deviceId = resolveDeviceId(ctx, sessions, earRegistry);
-      await refreshIfOpen(deviceId, storage, listView, "shopping:add_item");
+      // Emit the orb success FIRST so the icon flips immediately, then
+      // the list refresh — the Ear applies them in the same UI tick
+      // and the user sees "Добавил" with the list already populated.
       if (deviceId) {
         overlay.set(
           deviceId,
@@ -87,6 +92,7 @@ export function buildShoppingTools(
           "shopping:add_item_success",
         );
       }
+      await refreshAlways(deviceId, storage, listView, "shopping:add_item");
       return { ok: true, id: saved.id, name: saved.name };
     },
   });
@@ -117,7 +123,6 @@ export function buildShoppingTools(
     handler: async (dto, ctx) => {
       const result = await storage.markBought(dto.id);
       const deviceId = resolveDeviceId(ctx, sessions, earRegistry);
-      await refreshIfOpen(deviceId, storage, listView, "shopping:mark_bought");
       if (deviceId) {
         overlay.set(
           deviceId,
@@ -126,6 +131,7 @@ export function buildShoppingTools(
           "shopping:mark_bought_success",
         );
       }
+      await refreshAlways(deviceId, storage, listView, "shopping:mark_bought");
       return { ok: true, changed: result.changed };
     },
   });
@@ -138,7 +144,6 @@ export function buildShoppingTools(
     handler: async (dto, ctx) => {
       const result = await storage.softDelete(dto.id);
       const deviceId = resolveDeviceId(ctx, sessions, earRegistry);
-      await refreshIfOpen(deviceId, storage, listView, "shopping:delete_item");
       if (deviceId) {
         overlay.set(
           deviceId,
@@ -147,6 +152,7 @@ export function buildShoppingTools(
           "shopping:delete_item_success",
         );
       }
+      await refreshAlways(deviceId, storage, listView, "shopping:delete_item");
       return { ok: true, changed: result.changed };
     },
   });
@@ -159,7 +165,6 @@ export function buildShoppingTools(
     handler: async (_dto, ctx) => {
       const result = await storage.clearAllLive();
       const deviceId = resolveDeviceId(ctx, sessions, earRegistry);
-      await refreshIfOpen(deviceId, storage, listView, "shopping:clear_list");
       if (deviceId) {
         overlay.set(
           deviceId,
@@ -168,6 +173,7 @@ export function buildShoppingTools(
           "shopping:clear_list_success",
         );
       }
+      await refreshAlways(deviceId, storage, listView, "shopping:clear_list");
       return { ok: true, cleared: result.count };
     },
   });

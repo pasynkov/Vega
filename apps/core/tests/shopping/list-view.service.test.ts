@@ -62,9 +62,9 @@ describe("ListViewService", () => {
     const { listView, overlay } = makeServices();
     bindBoth(listView, overlay);
     listView.refresh("dev-1", SNAPSHOT);
-    vi.advanceTimersByTime(59_000);
+    vi.advanceTimersByTime(9_000);
     listView.refresh("dev-1", SNAPSHOT);
-    vi.advanceTimersByTime(59_000);
+    vi.advanceTimersByTime(9_000);
     expect(listView.isOpen("dev-1")).toBe(true);
     vi.useRealTimers();
   });
@@ -74,7 +74,7 @@ describe("ListViewService", () => {
     const { listView, overlay } = makeServices();
     const { listSends, overlaySends } = bindBoth(listView, overlay);
     listView.refresh("dev-1", SNAPSHOT);
-    vi.advanceTimersByTime(60_000);
+    vi.advanceTimersByTime(10_000);
     expect(listView.isOpen("dev-1")).toBe(false);
     expect(listSends.at(-1).view.open).toBe(false);
     expect(overlaySends.at(-1).state.kind).toBe("idle");
@@ -87,7 +87,7 @@ describe("ListViewService", () => {
     bindBoth(listView, overlay);
     listView.refresh("dev-1", SNAPSHOT);
     listView.unbindDevice("dev-1");
-    vi.advanceTimersByTime(60_000);
+    vi.advanceTimersByTime(10_000);
     expect(listView.isOpen("dev-1")).toBe(false);
     // re-bind → seq restarts
     bindBoth(listView, overlay);

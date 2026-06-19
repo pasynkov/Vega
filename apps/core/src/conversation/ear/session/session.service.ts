@@ -354,6 +354,17 @@ export class SessionService {
         {},
         "stt_final_continuous",
       );
+    } else {
+      // Regular short-command session — paint thinking the moment the
+      // final lands so the user gets immediate visual feedback while
+      // the orchestrator dispatches. Caption stays off (short commands
+      // don't need running text on the overlay).
+      this.overlay.set(
+        session.deviceId,
+        { kind: "thinking" },
+        {},
+        "stt_final_regular",
+      );
     }
     this.notifyTranscriptListeners(session.sessionId, "final", text);
     if (session.ownerController) {
@@ -457,24 +468,50 @@ export class SessionService {
     // still pending (a domain ttl is the source of truth for the next
     // overlay transition).
     const ttlPending = this.overlay.hasTtlTimer?.(session.deviceId) ?? false;
-    if (!opts?.silentOverlay && !ttlPending) {
+    const currentKind = this.overlay.getKind?.(session.deviceId);
+    // If the overlay is already in a "domain finished" state (idle,
+    // view, success, error) the orchestrator has already returned and
+    // the domain painted whatever it wanted; the session is just
+    // waiting on silence_cap. Don't repaint thinking on top.
+    // Only `listening` / `capturing` / `thinking` mean the turn is
+    // still in flight and a thinking paint is appropriate.
+    const alreadyFinished = currentKind === "idle"
+      || currentKind === "view"
+      || currentKind === "success"
+      || currentKind === "error"
+      || currentKind === "processing";
+    if (!opts?.silentOverlay && !ttlPending && !alreadyFinished) {
       const lastFinalText = session.finals.length > 0
         ? session.finals[session.finals.length - 1].trim()
         : session.partials.length > 0
           ? session.partials[session.partials.length - 1].trim()
           : "";
-      const sound: "endpoint" | "error" =
-        reason === "stt_error" || reason === "timeout" ? "error" : "endpoint";
-      this.overlay.set(
-        session.deviceId,
-        {
-          kind: "thinking",
-          ...(lastFinalText.length > 0 ? { caption: lastFinalText.slice(0, 240) } : {}),
-          sound,
-        },
-        {},
-        `terminate_${reason}:${initiator}`,
-      );
+      const hadSpeech = lastFinalText.length > 0;
+      // Empty session (false-positive wake → silence cap with 0 finals/
+      // partials) → don't paint `thinking`; nothing is being thought
+      // about, the orchestrator won't run. Drop straight to idle so the
+      // overlay collapses instead of getting stuck.
+      if (!hadSpeech) {
+        this.overlay.set(
+          session.deviceId,
+          { kind: "idle" },
+          {},
+          `terminate_${reason}:${initiator}:empty`,
+        );
+      } else {
+        const sound: "endpoint" | "error" =
+          reason === "stt_error" || reason === "timeout" ? "error" : "endpoint";
+        this.overlay.set(
+          session.deviceId,
+          {
+            kind: "thinking",
+            caption: lastFinalText.slice(0, 240),
+            sound,
+          },
+          {},
+          `terminate_${reason}:${initiator}`,
+        );
+      }
     }
 
     if (reason === "endpoint") {
