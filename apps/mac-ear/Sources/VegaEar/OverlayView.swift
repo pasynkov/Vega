@@ -143,6 +143,7 @@ struct Orb: View {
         case .success:    return [.green, .green.opacity(0.35)]
         case .error:      return [.red, .orange.opacity(0.35)]
         case .view:       return [.indigo, .blue.opacity(0.35)]
+        case .immersive:  return [.mint, .teal.opacity(0.45)]
         }
     }
 
@@ -156,6 +157,7 @@ struct Orb: View {
         case .error:      return .red
         case .idle:       return .gray
         case .view:       return .indigo
+        case .immersive:  return .mint
         }
     }
 
@@ -184,6 +186,7 @@ struct Orb: View {
         case .success:    return "checkmark"
         case .error:      return "exclamationmark"
         case .view:       return "list.bullet"
+        case .immersive:  return "waveform.circle.fill"
         }
     }
 
@@ -195,6 +198,7 @@ struct Orb: View {
         case .success, .error:       return 1.0
         case .idle:                  return 1.6
         case .view:                  return 2.4   // very calm, "I'm presenting"
+        case .immersive:             return 1.4   // live-listening pulse, slightly slower than .listening
         }
     }
 
