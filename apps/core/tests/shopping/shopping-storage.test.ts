@@ -89,6 +89,23 @@ describe("ShoppingStorageService + DomainDbFactory", () => {
     expect((await svc.listLive()).length).toBe(0);
   });
 
+  it("listLive sorts pending before bought; within each block by createdAt ASC", async () => {
+    // Inserted A (pending), B (pending), C (pending) in order. Mark B
+    // bought. Expected: A, C, B — pending block (A, C) sorted by
+    // createdAt ASC, then bought block (B).
+    const a = await svc.addOrUpdatePending({ name: "a-молоко", quantity: null, unit: null, note: null });
+    // SQLite CreateDateColumn resolution is per-second; sleep briefly so
+    // each row gets a strictly later createdAt and the ASC order is
+    // deterministic.
+    await new Promise((r) => setTimeout(r, 1100));
+    const b = await svc.addOrUpdatePending({ name: "b-хлеб", quantity: null, unit: null, note: null });
+    await new Promise((r) => setTimeout(r, 1100));
+    const c = await svc.addOrUpdatePending({ name: "c-яйца", quantity: null, unit: null, note: null });
+    await svc.markBought(b.id);
+    const live = await svc.listLive();
+    expect(live.map((it) => it.id)).toEqual([a.id, c.id, b.id]);
+  });
+
   it("formatLabel renders name + quantity + unit, omits null fields", async () => {
     const milk = await svc.addOrUpdatePending({ name: "молоко", quantity: 2, unit: "л", note: null });
     expect(svc.formatLabel(milk)).toBe("молоко 2 л");

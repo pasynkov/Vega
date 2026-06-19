@@ -58,9 +58,13 @@ export class ShoppingStorageService {
   }
 
   async listLive(): Promise<ShoppingItem[]> {
+    // Order: pending block on top, bought block on the bottom; within
+    // each block sort by createdAt ASC so newer entries land at the
+    // bottom of their group. The status sort relies on alphabetical
+    // ordering ("pending" > "bought") with DESC to put pending first.
     return this.repo.find({
       where: { deletedAt: IsNull() },
-      order: { createdAt: "ASC" },
+      order: { status: "DESC", createdAt: "ASC" },
     });
   }
 

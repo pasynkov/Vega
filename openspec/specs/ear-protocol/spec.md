@@ -26,7 +26,7 @@ The protocol SHALL define the following socket.io events emitted by the Ear to C
 
 - `register` — fired once per connection immediately after `connect`. Payload `{deviceId (UUID v4), deviceName (string), capabilities (array)}`.
 - `wake_detected` — fired whenever the Ear's wake-word detector fires. Payload `{deviceId (UUID v4), score (number, 0..1), timestamp (ISO-8601 string)}`.
-- `session_start` — fired to open a capture session. Payload `{deviceId, sessionId (UUID v4), userId (nullable string), sampleRate (positive int), codec (enum: linear16 | opus), mode? (enum: regular | continuous)}`.
+- `session_start` — fired to open a capture session. Payload `{deviceId, sessionId (UUID v4), userId (nullable string), sampleRate (positive int), codec (enum: linear16 | opus), mode? (enum: regular | continuous | ask | immersive)}`.
 - `audio_frame` — fired repeatedly during a session. Payload SHALL be emitted as `socket.emit("audio_frame", sessionId, buffer)`: first arg is the `sessionId` string, second arg is the binary buffer (PCM bytes for `linear16`, OPUS packet for `opus`). socket.io SHALL ship the buffer as a binary attachment.
 - `session_end` — fired when the Ear decides to terminate the session locally. Payload `{sessionId, reason (enum: user | timeout | vad)}`.
 
@@ -58,7 +58,7 @@ The protocol SHALL define the following socket.io events emitted by Core to the 
 - `wake_ack` — response to `wake_detected`. Payload `{action (enum: proceed | yield)}`.
 - `partial_transcript` — interim STT result. Payload `{sessionId, text (string), isFinal: false}`.
 - `final_transcript` — terminal STT result. Payload `{sessionId, text (string)}`.
-- `overlay_update` — drives the interactive overlay. Payload `{seq (positive int, monotonic per device per connection), state: { kind, hint?, caption?, sound? }}`. The `state.kind` field SHALL be one of `idle`, `listening`, `capturing`, `thinking`, `processing`, `success`, `error`, `view`. The `state.sound` field, when present, SHALL be one of `endpoint`, `error`, `ack_done`, `ack_continue`, `ack_thinking`, `ack_success`, `ack_error`, `ack_unknown` (the `wake` cue is local-only and never appears here).
+- `overlay_update` — drives the interactive overlay. Payload `{seq (positive int, monotonic per device per connection), state: { kind, hint?, caption?, sound? }}`. The `state.kind` field SHALL be one of `idle`, `listening`, `capturing`, `thinking`, `processing`, `success`, `error`, `view`, `immersive`. The `state.sound` field, when present, SHALL be one of `endpoint`, `error`, `ack_done`, `ack_continue`, `ack_thinking`, `ack_success`, `ack_error`, `ack_unknown` (the `wake` cue is local-only and never appears here).
 - `list_view_update` — drives a generic list-view surface. Payload `{seq (positive int, monotonic per device per connection on its own channel), view: { title?, items: [{id, label, done}], open }}`. The Ear renders the `items` array verbatim; `done` items render struck-through.
 - `session_mode` — forward-compat mode hint for an active session. Payload `{sessionId, mode}`.
 - `arm_capture` — backend-initiated capture trigger. Payload `{mode}`.
@@ -76,9 +76,9 @@ The Swift decoder SHALL tolerate unknown `state.kind`, `state.sound`, `arm_captu
 - **THEN** validation SHALL succeed
 - **AND** Core MVP code SHALL never emit `yield`
 
-#### Scenario: `overlay_update` accepts every kind including `view`
+#### Scenario: `overlay_update` accepts every kind including `view` and `immersive`
 
-- **WHEN** the validator is given an `overlay_update` whose `state.kind` is any of `idle`, `listening`, `capturing`, `thinking`, `processing`, `success`, `error`, `view`
+- **WHEN** the validator is given an `overlay_update` whose `state.kind` is any of `idle`, `listening`, `capturing`, `thinking`, `processing`, `success`, `error`, `view`, `immersive`
 - **THEN** validation SHALL succeed
 
 #### Scenario: `overlay_update.state.sound` rejects `wake`
@@ -132,3 +132,40 @@ All control events SHALL travel as socket.io events over a WebSocket transport (
 - **WHEN** Core receives an `audio_frame` event with `sessionId = X` and a binary attachment of `N` bytes
 - **THEN** Core SHALL forward the `N`-byte buffer to the Deepgram session bound to `sessionId = X`
 - **AND** SHALL drop the buffer if no active session matches
+
+### Requirement: Immersive session-mode wire variant
+
+The `session_start.mode` enum SHALL accept `immersive` in addition to `regular`, `continuous`, and `ask`. The `arm_capture.mode` enum SHALL also accept `immersive`. The `session_mode.mode` enum SHALL accept `immersive` (forward-compat hint for an active session). The Swift decoder SHALL surface unknown mode values as `.unknown` rather than disconnecting (already the rule); the new `immersive` value SHALL decode as a first-class variant on both TypeScript and Swift sides.
+
+#### Scenario: session_start validates immersive mode
+
+- **WHEN** the validator is given `session_start` with `mode: "immersive"`
+- **THEN** validation SHALL succeed on both TypeScript and Swift sides
+
+#### Scenario: arm_capture dispatches immersive mode
+
+- **WHEN** the Ear receives `{ "type": "arm_capture", "mode": "immersive" }`
+- **THEN** the Ear SHALL open a new capture session under `immersive` mode without waiting for a wake-word
+- **AND** the Ear SHALL play the `ack_continue` cue (same as continuous — the same "long session opened" auditory signal)
+- **AND** the Ear SHALL send `session_start` carrying `mode: "immersive"`
+
+#### Scenario: round-trip fixture for immersive
+
+- **WHEN** the package's round-trip test suite runs
+- **THEN** at least one fixture per `session_start`, `arm_capture`, and `session_mode` event SHALL carry `mode: "immersive"`
+- **AND** that fixture SHALL parse identically through TypeScript and Swift representations
+
+### Requirement: Immersive overlay kind
+
+The `overlay_update.state.kind` enum SHALL accept `immersive` in addition to `idle`, `listening`, `capturing`, `thinking`, `processing`, `success`, `error`, `view`. `immersive` SHALL render an Ear-side UI variant that visually combines the static `view` surface (live list / caption) with a "live listening" indicator (waveform / pulsing border). The state record may carry `caption` and `hint` like other kinds.
+
+#### Scenario: overlay_update accepts immersive kind
+
+- **WHEN** the validator is given an `overlay_update` whose `state.kind` is `immersive`
+- **THEN** validation SHALL succeed
+- **AND** Swift decoding SHALL succeed and surface the kind as `.immersive`
+
+#### Scenario: round-trip fixture for immersive overlay kind
+
+- **WHEN** the package's round-trip test suite runs
+- **THEN** at least one `overlay_update` fixture SHALL carry `state.kind: "immersive"`

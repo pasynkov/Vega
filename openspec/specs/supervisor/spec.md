@@ -106,3 +106,35 @@ The supervisor LLM SHALL be prompted to produce ONLY structured output. It SHALL
 - **WHEN** the LLM ignores the structured-output instruction and returns free-form text
 - **THEN** the supervisor node SHALL treat this as a validation failure and retry once
 - **AND** if the retry also fails the supervisor SHALL fall back to the clarification reply
+
+### Requirement: Supervisor opens immersive sessions
+
+The top-supervisor SHALL be able to open an immersive Ear-session for any domain registered with `ImmersiveDomainRegistry`. The intent-routing for immersive entry SHALL live exclusively at the top supervisor level — domain-supervisor specs SHALL NOT contain `open_immersive_session` or its equivalent.
+
+The set of valid immersive domains SHALL be sourced at runtime from `ImmersiveDomainRegistry.list()`. The supervisor's system prompt SHALL include a dynamic block enumerating the currently registered immersive domains together with the intent-mapping rule:
+
+> Если пользователь говорит "погружаемся в X" / "давай в X" / "открой режим X" / "зайди в X" / "давай займёмся X" / "займёмся X" / "займусь X" (X — название домена или его очевидный описательный аналог, например "списком покупок" → shopping) и X совпадает с одним из перечисленных immersive-доменов — открой immersive-сессию для X.
+
+The supervisor's `route` tool MAY encode this decision either as a true second tool call (`open_immersive_session`) or as a pseudo-goto on the existing `route` tool (`goto: "__immersive_open__"`, `task: "<domain>"`); the schema SHALL include `__immersive_open__` in the `goto` enum only when at least one immersive domain is registered, and the validator SHALL require `task` to name one of the registered domains in that case.
+
+When the supervisor decides to open an immersive session, the immersive-open dispatch SHALL invoke `EarSessionRouter.arm({ownerSpec: reg.sessionSpec, mode: "immersive", domainName: <domain>, intent})` and SHALL return a `Command(goto: END)` whose AIMessage carries a non-empty `name` (e.g. `"immersive_open"`) so `ConversationService.wasActed` treats the turn as acted (not unknown).
+
+#### Scenario: Supervisor routes immersive intent for shopping
+
+- **WHEN** the top-supervisor receives the final `"давай займёмся списком покупок"` and `shopping` is in the immersive registry
+- **THEN** the supervisor SHALL dispatch the immersive-open action with `domain = "shopping"`
+- **AND** the action SHALL call `router.arm({ownerSpec: <shopping-session-spec>, mode: "immersive", domainName: "shopping"})`
+- **AND** the supervisor SHALL NOT route the final into the shopping supervisor-spec
+
+#### Scenario: Supervisor prompt lists registered immersive domains
+
+- **WHEN** the supervisor builds its prompt and `registry.list()` returns `["shopping"]`
+- **THEN** the system prompt SHALL render `shopping` in the immersive-domains block
+- **AND** the intent-mapping rule SHALL appear in the rules section
+
+#### Scenario: Immersive open turn is marked as acted
+
+- **WHEN** the supervisor dispatches the immersive-open action successfully
+- **THEN** the returned `Command` SHALL update state with an `AIMessage` whose `name` field is non-empty
+- **AND** `ConversationService.wasActed` SHALL return true for the turn
+- **AND** the unknown-outcome error overlay SHALL NOT be painted
