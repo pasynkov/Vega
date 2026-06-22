@@ -3,9 +3,7 @@
 ## Purpose
 
 The Vega Ear for macOS — a menu-bar app that always-listens for a wake word, captures the user's task as PCM, streams it to Vega Core, plays audible cues at session boundaries, and persists the user's input device choice. The Ear owns microphone capture and the user-facing UI; Core owns STT and persistence.
-
 ## Requirements
-
 ### Requirement: Menu-bar presence and lifecycle
 
 The Mac Ear SHALL run as a macOS menu-bar application with no Dock icon, no main window on launch, and a single status item indicating the current listening state.
@@ -58,7 +56,7 @@ The Ear SHALL request microphone access on first launch and SHALL not enter the 
 
 The Ear SHALL continuously stream microphone audio through a wake-word detector that emits a `wake_detected` event when any of the configured wake-word candidates is recognized.
 
-The wake-word detector SHALL be accessed only through a `WakeWordDetector` Swift protocol. The implementation behind this protocol SHALL use OpenWakeWord (ONNX). It SHALL load the OpenWakeWord shared front-end (`melspectrogram.onnx`, `embedding_model.onnx`) plus a configurable list of classifier-head model files from the app bundle's `Resources/` directory; no remote download SHALL occur at runtime. The MVP candidate set SHALL be `["Janet", "edna"]`, both as 200 KB community-trained ONNX classifier heads. No call site outside the implementation type SHALL reference OpenWakeWord or ONNX Runtime APIs directly.
+The wake-word detector SHALL be accessed only through a `WakeWordDetector` Swift protocol. The implementation behind this protocol SHALL use OpenWakeWord (ONNX). It SHALL load the OpenWakeWord shared front-end (`melspectrogram.onnx`, `embedding_model.onnx`) plus a configurable list of classifier-head model files from the app bundle's `Resources/` directory; no remote download SHALL occur at runtime. The MVP candidate set SHALL be `["Vega"]`, backed by a single project-trained classifier head `Vega.onnx` (produced by the `wake-word-training` capability) that detects the Russian utterance "Вега". The previously bundled placeholder heads `Janet.onnx` and `edna.onnx` SHALL NOT be present in the bundle. No call site outside the implementation type SHALL reference OpenWakeWord or ONNX Runtime APIs directly.
 
 For every chunk of captured audio the detector SHALL run the shared front-end exactly once and then run each candidate classifier head against the resulting embedding. The detector SHALL emit a `wake_detected` event when at least one candidate's per-frame confidence score crosses the user-configurable threshold described in the "Tunable wake-word sensitivity" requirement. The winning candidate name and score SHALL be recorded in the app log on every detection so the user can compare candidates offline.
 
@@ -66,15 +64,15 @@ The Ear SHALL also expose a debug "Trigger test wake" / "Stop listening" menu-ba
 
 #### Scenario: Wake word candidate is spoken
 
-- **WHEN** the user speaks one of the configured candidate wake words ("Janet" or "Edna") within microphone range while the app is `idle`
+- **WHEN** the user speaks the configured wake word ("Вега") within microphone range while the app is `idle`
 - **THEN** within 400 ms a `wake_detected` event SHALL be sent to Core over the WebSocket
 - **AND** the status item SHALL transition to `listening`
 - **AND** the configured wake cue SHALL be played
-- **AND** the app log SHALL include the winning candidate name and confidence score
+- **AND** the app log SHALL include the winning candidate name (`Vega`) and confidence score
 
 #### Scenario: Non-wake speech is ignored
 
-- **WHEN** the user speaks for at least 5 seconds without uttering any configured candidate wake word
+- **WHEN** the user speaks for at least 5 seconds without uttering the configured wake word "Вега"
 - **THEN** no `wake_detected` event SHALL be emitted
 - **AND** no audio frames SHALL be sent to Core
 
@@ -86,7 +84,7 @@ The Ear SHALL also expose a debug "Trigger test wake" / "Stop listening" menu-ba
 
 #### Scenario: Wake-word engine fails to initialize
 
-- **WHEN** the OpenWakeWord detector fails to initialize (any required bundled ONNX resource is missing, or ONNX Runtime initialization errors out)
+- **WHEN** the OpenWakeWord detector fails to initialize (any required bundled ONNX resource — `melspectrogram.onnx`, `embedding_model.onnx`, or `Vega.onnx` — is missing, or ONNX Runtime initialization errors out)
 - **THEN** the status item SHALL show `error`
 - **AND** the menu SHALL surface a human-readable description of the failure
 - **AND** the app SHALL retry initialization no more often than once per 30 seconds
@@ -263,38 +261,43 @@ The Mac Ear SHALL render an interactive overlay window driven by `overlay_update
 - `ignoresMouseEvents = true` at all times (the overlay is purely informational; cancelling a session is done by going silent, not by clicking)
 - `collectionBehavior` allowing it to appear on every Space and stay above fullscreen apps
 
-The overlay SHALL anchor under the menu-bar status item: its top-right corner sits ≈6 pt below the status icon's bottom-right corner (clamped to the screen), so it reads as a dropdown from the tray icon. When the status-item frame is not available yet, the overlay SHALL fall back to the top-right corner of the screen containing the menu-bar item. Its content SHALL be a SwiftUI view composed of:
+The overlay's content view SHALL be an `EarUI.OverlayView` instance bound to a `EarCore.OverlayViewModel`. The content view SHALL NOT be defined locally in the Mac executable target. The overlay SHALL render the v1 "seamless morph" mark — a single SwiftUI `Canvas` morphing across `idle`, `listening`, `capturing`, `thinking`, `processing`, `success`, `error`, `view`, `immersive` — together with the optional `hint` (above), `caption` (below), and the embedded list-view surface. Theming SHALL come from the shared dark palette in `EarUI.Theme`; the executable SHALL NOT specify colors directly.
 
-- An orb visual (SwiftUI `Canvas` or shape with state-driven gradient + pulse animation) sized ~96 pt, plus an SF Symbol glyph centered inside the orb that uniquely identifies the current `kind` (`mic.fill` for listening, `waveform` for capturing, `sparkle` for thinking, `gearshape.fill` for processing, `checkmark` for success, `exclamationmark` for error, `list.bullet` for view).
-- An optional top text section showing `state.hint` (collapses if absent).
-- An optional bottom text section showing `state.caption` (collapses if absent).
-- An optional list-view section rendered below the caption (driven by the separate `list_view_update` channel — see "List-view surface below the overlay orb").
-- A rounded-rect background using `.ultraThinMaterial` with `cornerRadius: 22`.
-- Fade-in/scale-up appearance and fade-out/scale-down disappearance, animated over ~200 ms. Content transitions (kind/hint/caption) SHALL apply instantly, without crossfade, so the visual matches the cue sound that arrived with the same update.
+The overlay window SHALL anchor under the menu-bar status item. When the status-item frame is available, the overlay SHALL appear with a **drop-from-tray animation**: starting at a position whose top edge sits at the status item's bottom edge (so the panel is initially hidden behind the menu bar), then translating downward over ~220 ms to its resting position (top-right corner ≈ 6 pt below the status icon), concurrent with opacity 0→1. The horizontal anchor SHALL track the status item's centerline (clamped to `NSScreen.visibleFrame`). When the status-item frame is not available (e.g., overflow menu hides it), the overlay SHALL fall back to a simple fade-in at the resting position.
+
+On hide the overlay SHALL reverse: translate upward into the menu-bar region concurrent with opacity 1→0 over ~180 ms, then `orderOut(_:)`.
 
 The overlay SHALL be visible whenever the current `state.kind` is not `idle` OR a list-view surface is currently open for the device. On `idle` with no list view open it SHALL hide. The Ear SHALL NOT hide the overlay in response to `session_end` (Core- or Ear-initiated); the overlay is intentionally decoupled from session lifecycle so the user keeps seeing a `thinking` / `capturing` state while the orchestrator dispatches between sessions. The overlay SHALL hide only when (a) the orb `state.kind` is `idle` AND no list view is open, (b) WebSocket disconnect from Core, (c) user-initiated pause or app shutdown.
 
-#### Scenario: Overlay appears on first non-idle update
+Content transitions (kind / hint / caption changes) SHALL apply to the morph mark via the `TimelineDriver` exported from `EarUI`; no per-update crossfade SHALL be layered on top of the morph.
 
-- **WHEN** the Ear receives `{ type: "overlay_update", seq: 1, state: { kind: "listening" } }` and the overlay is currently hidden
-- **THEN** the overlay window SHALL fade in within ~200 ms with the listening orb visual
-- **AND** no top or bottom text section SHALL be rendered
+#### Scenario: Overlay drops from the tray on first non-idle update
+
+- **WHEN** the Ear receives `{ type: "overlay_update", seq: 1, state: { kind: "listening" } }` and the overlay is currently hidden and the status-item frame is available
+- **THEN** the overlay window SHALL appear with its top edge at the status item's bottom edge and opacity 0
+- **AND** SHALL animate downward to its resting position concurrent with opacity 0→1 over ~220 ms
+- **AND** the rendered content SHALL be the EarUI listening morph state
+
+#### Scenario: Overlay falls back to fade-in when the status-item frame is unavailable
+
+- **WHEN** the Ear receives a non-idle `overlay_update` while the status item is in the menu-bar overflow (no frame available)
+- **THEN** the overlay SHALL fade in at its resting position over ~200 ms (no translation)
 
 #### Scenario: Overlay shows hint and caption together
 
 - **WHEN** the Ear receives `{ type: "overlay_update", seq: 7, state: { kind: "processing", hint: "Сохраняю заметку…", caption: "купи молоко" } }`
-- **THEN** the overlay SHALL render the processing orb, the hint above, and the caption below
+- **THEN** the overlay SHALL render the EarUI processing morph state, the hint above, and the caption below
 
 #### Scenario: Overlay survives session_end (bridge state during dispatch)
 
 - **WHEN** the Ear has a visible overlay (e.g. `thinking`) and receives `{ type: "session_end", sessionId: <S>, reason: "endpoint" }` for the active session
 - **THEN** the overlay SHALL stay visible with its current state
-- **AND** the next `overlay_update` Core emits (e.g. `arm_capture` follow-up `capturing`, domain `success`, or implicit `idle`) SHALL drive the transition
+- **AND** the next `overlay_update` Core emits SHALL drive the transition
 
 #### Scenario: Overlay collapses on idle update
 
 - **WHEN** the Ear receives `{ type: "overlay_update", seq: N, state: { kind: "idle" } }`
-- **THEN** the overlay SHALL fade out and hide
+- **THEN** the overlay SHALL reverse-animate (translate upward + fade out) over ~180 ms and hide
 - **AND** the next visible overlay SHALL require a new non-idle update from Core
 
 ### Requirement: Overlay state model parser tolerates unknown values
@@ -402,3 +405,31 @@ The Ear's Codable decoding of `arm_capture` SHALL accept the `mode` value `"ask"
 - **WHEN** the Ear receives `{ "type": "arm_capture", "mode": "ask" }`
 - **THEN** Codable decoding SHALL succeed
 - **AND** the resulting `captureMs` SHALL be `nil`, falling back to the documented 8 000 ms default at runtime
+
+### Requirement: Mac Ear consumes the shared Swift packages
+
+The Mac Ear executable target SHALL depend on the local SPM packages `packages/ear-core/swift/` (product `EarCore`) and `packages/ear-ui/swift/` (product `EarUI`), in addition to `packages/ear-protocol/swift/` (product `EarProtocol`). Cross-platform code that previously lived inside `apps/mac-ear/Sources/VegaEar/` SHALL be sourced from `EarCore` or `EarUI` rather than duplicated in the executable target.
+
+The executable target SHALL retain the following Mac-only files: `main.swift`, `AppDelegate`, `StatusItemController`, `OverlayWindowController`, `MicDeviceCatalog`, and the `OpenWakeWordDetector` glue. All other Swift files SHALL be removed from the executable target after Phase 1, because their canonical home is `EarCore` or `EarUI`.
+
+#### Scenario: SessionCoordinator is imported from EarCore
+
+- **WHEN** the Mac executable references `SessionCoordinator`
+- **THEN** the import SHALL resolve to the `EarCore` module
+- **AND** there SHALL be no `SessionCoordinator.swift` file under `apps/mac-ear/Sources/VegaEar/`
+
+#### Scenario: Overlay rendering uses EarUI
+
+- **WHEN** the `OverlayWindowController` instantiates the overlay content view
+- **THEN** it SHALL construct a SwiftUI view exported from `EarUI` (not a view defined in the executable target)
+
+### Requirement: Mac Ear declares both `wake` and `mic`/`speaker` capabilities on register; never `vad`
+
+The Mac Ear SHALL continue to register with `capabilities: ["mic","wake","speaker","display"]` (the existing set, possibly without `display` if not previously included). It SHALL NOT include `vad` in its registration in v1: the Mac's session-entry trigger is wake-word, and Core's wake-precondition rule continues to apply to the Mac.
+
+#### Scenario: Mac register payload omits vad
+
+- **WHEN** the Mac Ear sends `register`
+- **THEN** `capabilities` SHALL include `"wake"`
+- **AND** `capabilities` SHALL NOT include `"vad"`
+
