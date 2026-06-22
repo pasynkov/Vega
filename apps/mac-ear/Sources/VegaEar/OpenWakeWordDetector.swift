@@ -1,3 +1,4 @@
+import EarCore
 import Foundation
 import OnnxRuntimeBindings
 
@@ -62,7 +63,7 @@ final class OpenWakeWordDetector: WakeWordDetector {
     private var lastDetectAt: Date?
     private var threshold: Float
 
-    init(threshold: Double, candidateNames: [String] = ["Janet", "edna"]) throws {
+    init(threshold: Double, candidateNames: [String] = ["Vega"]) throws {
         self.threshold = Float(threshold)
 
         env = try ORTEnv(loggingLevel: .warning)

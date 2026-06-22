@@ -1,46 +1,11 @@
 import AppKit
+import EarCore
 
-enum ListeningState: Equatable {
-    case idle
-    case listening
-    case streaming
-    case error(String)
-    case disabled
+// ListeningState, WakeThresholdPreset, wakeThresholdPresets, and
+// StatusControlling protocol live in EarCore so that iOS shell can
+// reuse the state-and-threshold vocabulary even though it has no menu bar.
 
-    var menuLabel: String {
-        switch self {
-        case .idle: return "State: idle (listening for wake)"
-        case .listening: return "State: listening"
-        case .streaming: return "State: streaming"
-        case .error(let msg): return "Error: \(msg)"
-        case .disabled: return "State: paused"
-        }
-    }
-
-    var iconSymbol: String {
-        switch self {
-        case .idle: return "ear"
-        case .listening: return "waveform"
-        case .streaming: return "waveform.circle.fill"
-        case .error: return "exclamationmark.triangle.fill"
-        case .disabled: return "pause.circle"
-        }
-    }
-}
-
-struct WakeThresholdPreset {
-    let label: String
-    let value: Double
-}
-
-let wakeThresholdPresets: [WakeThresholdPreset] = [
-    WakeThresholdPreset(label: "Low (0.3)", value: 0.3),
-    WakeThresholdPreset(label: "Default (0.5)", value: 0.5),
-    WakeThresholdPreset(label: "High (0.7)", value: 0.7),
-    WakeThresholdPreset(label: "Very High (0.85)", value: 0.85),
-]
-
-final class StatusItemController: NSObject {
+final class StatusItemController: NSObject, StatusControlling {
     var onPauseToggle: ((Bool) -> Void)?
     var onQuit: (() -> Void)?
     var onTestWake: (() -> Void)?
@@ -216,9 +181,29 @@ final class StatusItemController: NSObject {
     }
 
     private func applyIcon(for state: ListeningState) {
-        if let button = statusItem.button {
-            let image = NSImage(systemSymbolName: state.iconSymbol, accessibilityDescription: state.menuLabel)
+        guard let button = statusItem.button else { return }
+        let bundle = Bundle.module
+        let image: NSImage?
+        switch state {
+        case .listening, .streaming:
+            // Active session: accent-violet variant; NOT a template so the
+            // PDF's own colors are preserved.
+            image = bundle.url(forResource: "tray-listening", withExtension: "pdf")
+                .flatMap { NSImage(contentsOf: $0) }
+            image?.isTemplate = false
+        case .idle, .disabled:
+            // Passive: 1-color template — AppKit tints under the menu bar.
+            image = bundle.url(forResource: "tray-idle", withExtension: "pdf")
+                .flatMap { NSImage(contentsOf: $0) }
             image?.isTemplate = true
+        case .error:
+            // Keep SF Symbol for now — distinct shape for an error state.
+            image = NSImage(systemSymbolName: "exclamationmark.triangle.fill",
+                             accessibilityDescription: state.menuLabel)
+            image?.isTemplate = true
+        }
+        if let image {
+            image.size = NSSize(width: 18, height: 18)
             button.image = image
         }
     }

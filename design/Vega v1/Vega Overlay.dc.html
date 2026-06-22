@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  @keyframes vWave   { 0%,100% { transform: scaleY(.32) } 50% { transform: scaleY(1) } }
+  @keyframes vSpin   { to { transform: rotate(360deg) } }
+  @keyframes vSpinRev{ to { transform: rotate(-360deg) } }
+  @keyframes vHalo   { 0%,100% { transform: scale(.9); opacity:.6 } 50% { transform: scale(1.12); opacity:.95 } }
+  @keyframes vDot    { 0%,100% { transform: scale(.78); opacity:.7 } 50% { transform: scale(1.12); opacity:1 } }
+  @keyframes vRipple { 0%{transform:scale(.5);opacity:.7} 100%{transform:scale(1.55);opacity:0} }
+
+  /* ── 14s seamless loop: listen → capture → think → process → success → view → immersive → idle ── */
+  @keyframes mHalo  { 0%,12%{opacity:.9} 15%,52%{opacity:0} 54%{opacity:.95} 60%{opacity:.45} 63%,72%{opacity:0} 76%,92%{opacity:.8} 95%,100%{opacity:0} }
+  @keyframes mRing  {
+    0%{border-color:rgba(167,139,250,.85);box-shadow:0 0 20px rgba(167,139,250,.5),inset 0 0 14px rgba(167,139,250,.22)}
+    12%{border-color:rgba(167,139,250,.85);box-shadow:0 0 20px rgba(167,139,250,.5),inset 0 0 14px rgba(167,139,250,.22)}
+    15%{border-color:rgba(185,166,252,.7);box-shadow:0 0 18px rgba(167,139,250,.35),inset 0 0 12px rgba(167,139,250,.18)}
+    28%{border-color:rgba(185,166,252,.7);box-shadow:0 0 18px rgba(167,139,250,.35),inset 0 0 12px rgba(167,139,250,.18)}
+    31%{border-color:rgba(167,139,250,.16);box-shadow:0 0 0 rgba(0,0,0,0)}
+    38%{border-color:rgba(167,139,250,.16);box-shadow:0 0 0 rgba(0,0,0,0)}
+    41%{border-color:rgba(167,139,250,.12);box-shadow:0 0 0 rgba(0,0,0,0)}
+    50%{border-color:rgba(167,139,250,.12);box-shadow:0 0 0 rgba(0,0,0,0)}
+    53%{border-color:#d6cbff;box-shadow:0 0 24px rgba(214,203,255,.6),inset 0 0 16px rgba(214,203,255,.3)}
+    60%{border-color:#d6cbff;box-shadow:0 0 24px rgba(214,203,255,.6),inset 0 0 16px rgba(214,203,255,.3)}
+    63%{border-color:rgba(167,139,250,.9);box-shadow:0 0 9px rgba(167,139,250,.4)}
+    100%{border-color:rgba(167,139,250,.9);box-shadow:0 0 9px rgba(167,139,250,.4)}
+  }
+  @keyframes mCore  { 0%,12%{opacity:1;transform:scale(1)} 15%,28%{opacity:0;transform:scale(.5)} 31%,38%{opacity:.5;transform:scale(.58)} 41%,50%{opacity:.95;transform:scale(.64)} 53%,60%{opacity:0;transform:scale(.5)} 63%,100%{opacity:1;transform:scale(.82)} }
+  @keyframes mWave  { 0%,14%{opacity:0} 16%,28%{opacity:1} 31%,100%{opacity:0} }
+  @keyframes mArc   { 0%,30%{opacity:0} 33%,50%{opacity:1} 53%,100%{opacity:0} }
+  @keyframes mArc2  { 0%,40%{opacity:0} 43%,50%{opacity:1} 53%,100%{opacity:0} }
+  @keyframes mCheck { 0%,52%{opacity:0;transform:scale(.5)} 55%,60%{opacity:1;transform:scale(1)} 63%,100%{opacity:0;transform:scale(.5)} }
+  @keyframes mMark  { 0%,60%{transform:translate(102px,36px) scale(1)} 65%,100%{transform:translate(-12px,-12px) scale(.29)} }
+  @keyframes mMarkM { 0%,60%{transform:translate(49px,238px) scale(1)} 65%,100%{transform:translate(-59px,12px) scale(.16)} }
+  @keyframes mPanelH{ 0%,61%{min-height:230px} 65%,71%{min-height:262px} 74%,92%{min-height:374px} 95%,100%{min-height:230px} }
+  @keyframes mPanel { 0%,93%{opacity:1;transform:translateY(0) scale(1)} 96%,99%{opacity:0;transform:translateY(-12px) scale(.95)} 100%{opacity:1;transform:translateY(0) scale(1)} }
+  @keyframes mCap   { 0%,14%{opacity:0} 17%,38%{opacity:1} 41%,100%{opacity:0} }
+  @keyframes mList  { 0%,62%{opacity:0} 66%,92%{opacity:1} 95%,100%{opacity:0} }
+  @keyframes mLiveCap { 0%,75%{opacity:0;transform:translateY(8px)} 80%,92%{opacity:1;transform:translateY(0)} 95%,100%{opacity:0;transform:translateY(8px)} }
+  @keyframes mAddRow  { 0%,82%{opacity:0;max-height:0;margin-top:0} 87%,92%{opacity:1;max-height:36px;margin-top:18px} 95%,100%{opacity:0;max-height:0;margin-top:0} }
+  @keyframes mRippleGate { 0%,73%{opacity:0} 76%,92%{opacity:1} 95%,100%{opacity:0} }
+  @keyframes mMarkFade { 0%,93%{opacity:1} 96%,99%{opacity:0} 100%{opacity:1} }
+  @keyframes mPlay    { 0%{left:0%} 100%{left:100%} }
+</style>
+</helmet>
+
+<div style="min-width:100%; width:max-content; min-height:100vh; box-sizing:border-box; padding:56px; background:#e7e5df; font-family:'Golos Text',-apple-system,system-ui,sans-serif;">
+
+  <!-- HEADER -->
+  <div style="margin-bottom:48px;">
+    <div style="font-family:'JetBrains Mono',ui-monospace,monospace; font-size:13px; letter-spacing:.18em; text-transform:uppercase; color:#8b5cf6; font-weight:500; margin-bottom:16px;">Vega Ear · overlay</div>
+    <h1 style="font-size:42px; line-height:1.04; letter-spacing:-.025em; margin:0 0 14px; color:#1c1a24; font-weight:600;">Overlay states &amp; motion</h1>
+    <p style="font-size:17px; line-height:1.55; color:#6a6874; margin:0; max-width:600px;">Бесшовный морф плюс отдельные экраны каждого состояния — для macOS и для iPhone 16 Pro Max. Только dark mode.</p>
+  </div>
+
+  <!-- ════ SECTION: DESKTOP MORPH ════ -->
+  <div style="display:flex; align-items:baseline; gap:14px; margin-bottom:22px;">
+    <span style="font-family:'JetBrains Mono',ui-monospace,monospace; font-size:13px; color:#a8a6b0; font-weight:500;">01</span>
+    <h2 style="font-size:22px; letter-spacing:-.01em; margin:0; color:#1c1a24; font-weight:600;">macOS · seamless morph</h2>
+    <span style="font-size:14px; color:#8a8894;">happy-path → view → immersive, цикл</span>
+  </div>
+
+  <div style="flex:none; width:640px; border-radius:18px; overflow:hidden; box-shadow:0 2px 12px rgba(40,30,70,.13); position:relative; background:radial-gradient(120% 120% at 50% -8%, #2a2440 0%, #161325 52%, #0c0a15 100%); padding:60px 0 48px; margin-bottom:64px;">
+    <div style="position:absolute; width:380px; height:380px; left:50%; top:-150px; transform:translateX(-50%); border-radius:50%; background:radial-gradient(circle, rgba(139,92,246,.22), transparent 70%); filter:blur(12px);"></div>
+    <div style="display:flex; flex-direction:column; align-items:center;">
+      <div style="position:relative; width:300px; min-height:230px; border-radius:26px; background:rgba(24,22,36,.78); backdrop-filter:blur(32px) saturate(1.5); -webkit-backdrop-filter:blur(32px) saturate(1.5); border:1px solid rgba(255,255,255,.09); box-shadow:0 20px 56px -12px rgba(0,0,0,.62), inset 0 1px 0 rgba(255,255,255,.07); animation:mPanel 14s linear infinite, mPanelH 14s linear infinite;">
+        <div style="position:absolute; top:-7px; right:40px; width:14px; height:14px; background:rgba(24,22,36,.78); border-left:1px solid rgba(255,255,255,.09); border-top:1px solid rgba(255,255,255,.09); transform:rotate(45deg);"></div>
+        <div style="position:absolute; inset:0; padding:26px; opacity:0; animation:mList 14s linear infinite;">
+          <div style="margin:0 0 20px 34px; font-size:16px; font-weight:600; letter-spacing:-.01em; color:rgba(255,255,255,.74); white-space:nowrap;">Список покупок</div>
+          <div style="display:flex; align-items:center; gap:14px; margin-bottom:18px;"><div style="width:20px; height:20px; border-radius:50%; border:1.5px solid rgba(255,255,255,.34); flex:none;"></div><span style="font-size:17px; color:rgba(255,255,255,.93);">молоко</span></div>
+          <div style="display:flex; align-items:center; gap:14px; margin-bottom:18px;"><div style="width:20px; height:20px; border-radius:50%; background:#8b7fd0; display:flex; align-items:center; justify-content:center; flex:none;"><svg width="12" height="12" viewBox="0 0 9 9"><path d="M2 4.6 l1.6 1.6 l3.4 -4" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span style="font-size:17px; color:rgba(255,255,255,.4); text-decoration:line-through;">хлеб</span></div>
+          <div style="display:flex; align-items:center; gap:14px; margin-bottom:18px;"><div style="width:20px; height:20px; border-radius:50%; border:1.5px solid rgba(255,255,255,.34); flex:none;"></div><span style="font-size:17px; color:rgba(255,255,255,.93);">яйца</span></div>
+          <div style="display:flex; align-items:center; gap:14px; margin-bottom:0;"><div style="width:20px; height:20px; border-radius:50%; background:#8b7fd0; display:flex; align-items:center; justify-content:center; flex:none;"><svg width="12" height="12" viewBox="0 0 9 9"><path d="M2 4.6 l1.6 1.6 l3.4 -4" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span style="font-size:17px; color:rgba(255,255,255,.4); text-decoration:line-through;">кофе</span></div>
+          <div style="display:flex; align-items:center; gap:14px; overflow:hidden; animation:mAddRow 14s linear infinite;"><div style="width:20px; height:20px; border-radius:50%; border:1.5px solid rgba(167,139,250,.7); flex:none; box-shadow:0 0 8px rgba(167,139,250,.4);"></div><span style="font-size:17px; color:rgba(255,255,255,.93);">сыр</span></div>
+        </div>
+        <div style="position:absolute; top:0; left:0; width:96px; height:96px; display:flex; align-items:center; justify-content:center; transform:translate(102px,36px); animation:mMark 14s linear infinite;">
+          <div style="position:absolute; width:68px; height:68px; opacity:0; animation:mRippleGate 14s linear infinite;">
+            <div style="position:absolute; inset:0; border-radius:50%; border:2px solid rgba(167,139,250,.55); animation:vRipple 1.7s ease-out infinite;"></div>
+            <div style="position:absolute; inset:0; border-radius:50%; border:2px solid rgba(167,139,250,.55); animation:vRipple 1.7s ease-out infinite; animation-delay:.85s;"></div>
+          </div>
+          <div style="position:absolute; width:96px; height:96px; border-radius:50%; background:radial-gradient(circle, rgba(167,139,250,.42), transparent 68%); animation:vHalo 2.6s ease-in-out infinite, mHalo 14s linear infinite;"></div>
+          <div style="position:absolute; width:68px; height:68px; border-radius:50%; border:2.5px solid rgba(167,139,250,.85); animation:mRing 14s linear infinite;"></div>
+          <div style="position:absolute; width:14px; height:14px; border-radius:50%; background:radial-gradient(circle,#efeaff,#a78bfa); box-shadow:0 0 14px rgba(167,139,250,.9); animation:mCore 14s linear infinite;"></div>
+          <div style="position:absolute; display:flex; align-items:center; gap:4px; height:38px; animation:mWave 14s linear infinite;">
+            <div style="width:3.5px; height:38px; border-radius:2px; background:#c4b5fd; transform-origin:center; animation:vWave 1s ease-in-out infinite;"></div>
+            <div style="width:3.5px; height:38px; border-radius:2px; background:#c4b5fd; transform-origin:center; animation:vWave .9s ease-in-out infinite; animation-delay:.18s;"></div>
+            <div style="width:3.5px; height:38px; border-radius:2px; background:#d6cbff; transform-origin:center; animation:vWave 1.1s ease-in-out infinite; animation-delay:.05s;"></div>
+            <div style="width:3.5px; height:38px; border-radius:2px; background:#c4b5fd; transform-origin:center; animation:vWave .95s ease-in-out infinite; animation-delay:.28s;"></div>
+            <div style="width:3.5px; height:38px; border-radius:2px; background:#c4b5fd; transform-origin:center; animation:vWave 1.05s ease-in-out infinite; animation-delay:.12s;"></div>
+          </div>
+          <svg width="96" height="96" viewBox="0 0 96 96" style="position:absolute; animation:vSpin .85s linear infinite, mArc 14s linear infinite;"><circle cx="48" cy="48" r="34" fill="none" stroke="#a78bfa" stroke-width="4" stroke-linecap="round" stroke-dasharray="58 220"/></svg>
+          <svg width="96" height="96" viewBox="0 0 96 96" style="position:absolute; animation:vSpinRev 1.1s linear infinite, mArc2 14s linear infinite;"><circle cx="48" cy="48" r="26" fill="none" stroke="#c4b5fd" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="38 170"/></svg>
+          <svg width="68" height="68" viewBox="0 0 68 68" style="position:absolute; animation:mCheck 14s linear infinite;"><path d="M23 35 l8 8 l16 -20" fill="none" stroke="#efeaff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div style="position:absolute; bottom:26px; left:0; right:0; text-align:center; font-size:15px; line-height:1.45; color:rgba(255,255,255,.6); padding:0 30px; animation:mCap 14s linear infinite;">добавь молоко и хлеб в список покупок</div>
+        <div style="position:absolute; bottom:22px; left:26px; right:26px; display:flex; align-items:center; gap:10px; padding:11px 15px; border-radius:14px; background:rgba(167,139,250,.15); border:1px solid rgba(167,139,250,.2); animation:mLiveCap 14s linear infinite;">
+          <div style="width:8px; height:8px; border-radius:50%; background:#c4b5fd; box-shadow:0 0 8px rgba(196,181,253,.9); animation:vDot 1.3s ease-in-out infinite; flex:none;"></div>
+          <span style="font-size:15px; color:rgba(255,255,255,.82);">добавь сыр</span>
+        </div>
+      </div>
+      <div style="position:relative; width:540px; margin-top:38px;">
+        <div style="position:absolute; top:-6px; left:0; width:8px; height:8px; border-radius:50%; background:#d6cbff; box-shadow:0 0 10px rgba(214,203,255,.9); margin-left:-4px; animation:mPlay 14s linear infinite;"></div>
+        <div style="height:3px; border-radius:2px; background:rgba(167,139,250,.3);"></div>
+        <div style="display:flex; margin-top:12px; font-family:'JetBrains Mono',ui-monospace,monospace;">
+          <div style="flex:1;"><div style="font-size:10px; color:#c4b5fd;">listening</div><div style="font-size:9px; color:rgba(255,255,255,.32); margin-top:3px;">0.0s</div></div>
+          <div style="flex:1;"><div style="font-size:10px; color:#c4b5fd;">capturing</div><div style="font-size:9px; color:rgba(255,255,255,.32); margin-top:3px;">2.1s</div></div>
+          <div style="flex:1;"><div style="font-size:10px; color:#c4b5fd;">thinking</div><div style="font-size:9px; color:rgba(255,255,255,.32); margin-top:3px;">4.3s</div></div>
+          <div style="flex:1;"><div style="font-size:10px; color:#c4b5fd;">processing</div><div style="font-size:9px; color:rgba(255,255,255,.32); margin-top:3px;">5.7s</div></div>
+          <div style="flex:1;"><div style="font-size:10px; color:#c4b5fd;">success</div><div style="font-size:9px; color:rgba(255,255,255,.32); margin-top:3px;">7.4s</div></div>
+          <div style="flex:1;"><div style="font-size:10px; color:#c4b5fd;">view</div><div style="font-size:9px; color:rgba(255,255,255,.32); margin-top:3px;">8.8s</div></div>
+          <div style="flex:1;"><div style="font-size:10px; color:#c4b5fd;">immersive</div><div style="font-size:9px; color:rgba(255,255,255,.32); margin-top:3px;">10.4s</div></div>
+          <div style="flex:1;"><div style="font-size:10px; color:#8a8894;">idle</div><div style="font-size:9px; color:rgba(255,255,255,.32); margin-top:3px;">13.3s</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════ SECTION: DESKTOP STATES ════ -->
+  <div style="display:flex; align-items:baseline; gap:14px; margin-bottom:22px;">
+    <span style="font-family:'JetBrains Mono',ui-monospace,monospace; font-size:13px; color:#a8a6b0; font-weight:500;">02</span>
+    <h2 style="font-size:22px; letter-spacing:-.01em; margin:0; color:#1c1a24; font-weight:600;">macOS · states</h2>
+    <span style="font-size:14px; color:#8a8894;">каждое состояние отдельно</span>
+  </div>
+
+  <div style="display:flex; gap:20px; align-items:flex-start; margin-bottom:64px;">
+
+    <!-- listening -->
+    <div style="flex:none; width:248px;">
+      <div style="position:relative; min-height:236px; border-radius:18px; overflow:hidden; background:radial-gradient(120% 140% at 80% -20%, #241f38, #14111f 60%, #0d0b15); border:1px solid rgba(255,255,255,.05); display:flex; align-items:center; justify-content:center; padding:24px;">
+        <div style="position:relative; width:200px; padding:24px 18px; border-radius:22px; background:rgba(24,22,36,.78); backdrop-filter:blur(28px) saturate(1.5); -webkit-backdrop-filter:blur(28px) saturate(1.5); border:1px solid rgba(255,255,255,.09); box-shadow:0 16px 44px -12px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.07); display:flex; flex-direction:column; align-items:center; gap:18px;">
+          <div style="position:absolute; top:-7px; right:26px; width:13px; height:13px; background:rgba(24,22,36,.78); border-left:1px solid rgba(255,255,255,.09); border-top:1px solid rgba(255,255,255,.09); transform:rotate(45deg);"></div>
+          <div style="position:relative; width:84px; height:84px; display:flex; align-items:center; justify-content:center;">
+            <div style="position:absolute; width:84px; height:84px; border-radius:50%; background:radial-gradient(circle,rgba(167,139,250,.4),transparent 68%); animation:vHalo 2.6s ease-in-out infinite;"></div>
+            <div style="position:absolute; width:60px; height:60px; border-radius:50%; border:2.5px solid rgba(167,139,250,.85); box-shadow:0 0 18px rgba(167,139,250,.5),inset 0 0 12px rgba(167,139,250,.22);"></div>
+            <div style="width:13px; height:13px; border-radius:50%; background:radial-gradient(circle,#efeaff,#a78bfa); box-shadow:0 0 12px rgba(167,139,250,.9); animation:vDot 2.6s ease-in-out infinite;"></div>
+          </div>
+          <div style="font-size:14px; color:rgba(255,255,255,.5); text-align:center;">Скажите, что нужно</div>
+        </div>
+      </div>
+      <div style="font-family:'JetBrains Mono',ui-monospace,monospace; font-size:11px; color:#8a8894; margin-top:11px;"><span style="color:#8b5cf6;">listening</span> · аперт. открыта</div>
+    </div>
+
+    <!-- capturing -->
+    <div style="flex:none; width:248px;">
+      <div style="position:relative; min-height:236px; border-radius:18px; overflow:hidden; background:radial-gradient(120% 140% at 80% -20%, #241f38, #14111f 60%, #0d0b15); border:1px solid rgba(255,255,255,.05); display:flex; align-items:center; justify-content:center; padding:24px;">
+        <div style="position:relative; width:200px; padding:24px 18px; border-radius:22px; background:rgba(24,22,36,.78); backdrop-filter:blur(28px) saturate(1.5); -webkit-backdrop-filter:blur(28px) saturate(1.5); border:1px solid rgba(255,255,255,.09); box-shadow:0 16px 44px -12px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.07); display:flex; flex-direction:column; align-items:center; gap:18px;">
+          <div style="position:absolute; top:-7px; right:26px; width:13px; height:13px; background:rgba(24,22,36,.78); border-left:1px solid rgba(255,255,255,.09); border-top:1px solid rgba(255,255,255,.09); transform:rotate(45deg);"></div>
+          <div style="position:relative; width:84px; height:84px; display:flex; align-items:center; justify-content:center;">
+            <div style="position:absolute; width:60px; height:60px; border-radius:50%; border:2.5px solid rgba(185,166,252,.7); box-shadow:0 0 16px rgba(167,139,250,.35);"></div>
+            <div style="display:flex; align-items:center; gap:4px; height:34px;">
+              <div style="width:3.5px; height:34px; border-radius:2px; background:#c4b5fd; transform-origin:center; animation:vWave 1s ease-in-out infinite;"></div>
+              <div style="width:3.5px; height:34px; border-radius:2px; background:#c4b5fd; transform-origin:center; animation:vWave .9s ease-in-out infinite; animation-delay:.18s;"></div>
+              <div style="width:3.5px; height:34px; border-radius:2px; background:#d6cbff; transform-origin:center; animation:vWave 1.1s ease-in-out infinite; animation-delay:.05s;"></div>
+              <div style="width:3.5px; height:34px; border-radius:2px; background:#c4b5fd; transform-origin:center; animation:vWave .95s ease-in-out infinite; animation-delay:.28s;"></div>
+              <div style="width:3.5px; height:34px; border-radius:2px; background:#c4b5fd; transform-origin:center; animation:vWave 1.05s ease-in-out infinite; animation-delay:.12s;"></div>
+            </div>
+          </div>
+          <div style="font-size:14px; color:rgba(255,255,255,.82); text-align:center; line-height:1.4;">добавь молоко и хлеб в список покупок</div>
+        </div>
+      </div>
+      <div style="font-family:'JetBrains Mono',ui-monospace,monospace; font-size:11px; color:#8a8894; margin-top:11px;"><span style="color:#8b5cf6;">capturing</span> · слышит голос</div>
+    </div>
+
+    <!-- thinking -->
+    <div style="flex:none; width:248px;">
+      <div style="position:relative; min-height:236px; border-radius:18px; overflow:hidden; background:radial-gradient(120% 140% at 80% -20%, #241f38, #14111f 60%, #0d0b15); border:1px solid rgba(255,255,255,.05); display:flex; align-items:center; justify-content:center; padding:24px;">
+        <div style="position:relative; width:200px; padding:24px 18px; border-radius:22px; background:rgba(24,22,36,.78); backdrop-filter:blur(28px) saturate(1.5); -webkit-backdrop-filter:blur(28px) saturate(1.5); border:1px solid rgba(255,255,255,.09); box-shadow:0 16px 44px -12px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.07); display:flex; flex-direction:column; align-items:center; gap:18px;">
+          <div style="position:absolute; top:-7px; right:26px; width:13px; height:13px; background:rgba(24,22,36,.78); border-left:1px solid rgba(255,255,255,.09); border-top:1px solid rgba(255,255,255,.09); transform:rotate(45deg);"></div>
+          <div style="position:relative; width:84px; height:84px; display:flex; align-items:center; justify-content:center;">
+            <div style="position:absolute; width:60px; height:60px; border-radius:50%; border:2px solid rgba(167,139,250,.16);"></div>
+            <svg width="84" height="84" viewBox="0 0 84 84" style="position:absolute; animation:vSpin 1s linear infinite;"><circle cx="42" cy="42" r="30" fill="none" stroke="#a78bfa" stroke-width="4" stroke-linecap="round" stroke-dasharray="52 190"/></svg>
+            <div style="width:8px; height:8px; border-radius:50%; background:rgba(167,139,250,.5);"></div>
+          </div>
+          <div style="font-size:14px; color:rgba(255,255,255,.82); text-align:center; line-height:1.4;">добавь молоко и хлеб в список покупок</div>
+        </div>
+      </div>
+      <div style="font-family:'JetBrains Mono',ui-monospace,monospace; font-size:11px; color:#8a8894; margin-top:11px;"><span style="color:#8b5cf6;">thinking</span> · соображаю</div>
+    </div>
+
+    <!-- processing -->
+    <div style="flex:none; width:248px;">
+      <div style="position:relative; min-height:236px; border-radius:18px; overflow:hidden; background:radial-gradient(120% 140% at 80% -20%, #241f38, #14111f 60%, #0d0b15); border:1px solid rgba(255,255,255,.05); display:flex; align-items:center; justify-content:center; padding:24px;">
+        <div style="position:relative; width:200px; padding:24px 18px; border-radius:22px; background:rgba(24,22,36,.78); backdrop-filter:blur(28px) saturate(1.5); -webkit-backdrop-filter:blur(28px) saturate(1.5); border:1px solid rgba(255,255,255,.09); box-shadow:0 16px 44px -12px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.07); display:flex; flex-direction:column; align-items:center; gap:18px;">
+          <div style="position:absolute; top:-7px; right:26px; width:13px; height:13px; background:rgba(24,22,36,.78); border-left:1px solid rgba(255,255,255,.09); border-top:1px solid rgba(255,255,255,.09); transform:rotate(45deg);"></div>
+          <div style="position:relative; width:84px; height:84px; display:flex; align-items:center; justify-content:center;">
+            <svg width="84" height="84" viewBox="0 0 84 84" style="position:absolute; animation:vSpin .7s linear infinite;"><circle cx="42" cy="42" r="32" fill="none" stroke="#c4b5fd" stroke-width="4" stroke-linecap="round" stroke-dasharray="64 210"/></svg>
+            <svg width="84" height="84" viewBox="0 0 84 84" style="position:absolute; animation:vSpinRev 1s linear infinite;"><circle cx="42" cy="42" r="23" fill="none" stroke="#8b5cf6" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="34 150"/></svg>
+            <div style="width:9px; height:9px; border-radius:50%; background:#d6cbff; box-shadow:0 0 12px rgba(196,181,253,.9);"></div>
+          </div>
+          <div style="font-size:14px; color:rgba(255,255,255,.4); text-align:center;">&nbsp;</div>
+        </div>
+      </div>
+      <div style="font-family:'JetBrains Mono',ui-monospace,monospace; font-size:11px; color:#8a8894; margin-top:11px;"><span style="color:#8b5cf6;">processing</span> · делаю</div>
+    </div>
+
+    <!-- success -->
+    <div style="flex:none; width:248px;">
+      <div style="position:relative; min-height:236px; border-radius:18px; overflow:hidden; background:radial-gradient(120% 140% at 80% -20%, #241f38, #14111f 60%, #0d0b15); border:1px solid rgba(255,255,255,.05); display:flex; align-items:center; justify-content:center; padding:24px;">
+        <div style="position:relative; width:200px; padding:24px 18px; border-radius:22px; background:rgba(24,22,36,.78); backdrop-filter:blur(28px) saturate(1.5); -webkit-backdrop-filter:blur(28px) saturate(1.5); border:1px solid rgba(255,255,255,.09); box-shadow:0 16px 44px -12px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.07); display:flex; flex-direction:column; align-items:center; gap:18px;">
+          <div style="position:absolute; top:-7px; right:26px; width:13px; height:13px; background:rgba(24,22,36,.78); border-left:1px solid rgba(255,255,255,.09); border-top:1px solid rgba(255,255,255,.09); transform:rotate(45deg);"></div>
+          <div style="position:relative; width:84px; height:84px; display:flex; align-items:center; justify-content:center;">
+            <div style="position:absolute; width:84px; height:84px; border-radius:50%; background:radial-gradient(circle,rgba(214,203,255,.36),transparent 66%);"></div>
+            <div style="position:absolute; width:60px; height:60px; border-radius:50%; border:3px solid #d6cbff; box-shadow:0 0 24px rgba(214,203,255,.6),inset 0 0 16px rgba(214,203,255,.3);"></div>
+            <svg width="60" height="60" viewBox="0 0 60 60"><path d="M20 31 l7 7 l14 -18" fill="none" stroke="#efeaff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div style="font-size:14px; color:rgba(255,255,255,.4); text-align:center;">&nbsp;</div>
+        </div>
+      </div>
+      <div style="font-family:'JetBrains Mono',ui-monospace,monospace; font-size:11px; color:#8a8894; margin-top:11px;"><span style="color:#8b5cf6;">success</span> · готово · ttl 1.5s</div>
+    </div>
+
+    <!-- error -->
+    <div style="flex:none; width:248px;">
+      <div style="position:relative; min-height:236px; border-radius:18px; overflow:hidden; background:radial-gradient(120% 140% at 80% -20%, #241f38, #14111f 60%, #0d0b15); border:1px solid rgba(255,255,255,.05); display:flex; align-items:center; justify-content:center; padding:24px;">
+        <div style="position:relative; width:200px; padding:24px 18px; border-radius:22px; background:rgba(24,22,36,.78); backdrop-filter:blur(28px) saturate(1.5); -webkit-backdrop-filter:blur(28px) saturate(1.5); border:1px solid rgba(255,255,255,.09); box-shadow:0 16px 44px -12px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.07); display:flex; flex-direction:column; align-items:center; gap:18px;">
+          <div style="position:absolute; top:-7px; right:26px; width:13px; height:13px; background:rgba(24,22,36,.78); border-left:1px solid rgba(255,255,255,.09); border-top:1px solid rgba(255,255,255,.09); transform:rotate(45deg);"></div>
+          <div style="font-size:16px; font-weight:600; color:rgba(255,255,255,.86); text-align:center;">Не понял запрос</div>
+          <div style="position:relative; width:84px; height:84px; display:flex; align-items:center; justify-content:center;">
+            <div style="position:absolute; width:60px; height:60px; border-radius:50%; border:2px dashed rgba(154,147,184,.7);"></div>
+            <div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
+              <div style="width:3.5px; height:18px; border-radius:2px; background:#a8a2c0;"></div>
+              <div style="width:3.5px; height:3.5px; border-radius:50%; background:#a8a2c0;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="font-family:'JetBrains Mono',ui-monospace,monospace; font-size:11px; color:#8a8894; margin-top:11px;"><span style="color:#8b5cf6;">error</span> · приглушён, не алярм</div>
+    </div>
+
+    <!-- view -->
+    <div style="flex:none; width:248px;">
+      <div style="position:relative; min-height:236px; border-radius:18px; overflow:hidden; background:radial-gradient(120% 140% at 80% -20%, #241f38, #14111f 60%, #0d0b15); border:1px solid rgba(255,255,255,.05); display:flex; align-items:center; justify-content:center; padding:24px;">
+        <div style="position:relative; width:204px; padding:22px; border-radius:22px; background:rgba(24,22,36,.78); backdrop-filter:blur(28px) saturate(1.5); -webkit-backdrop-filter:blur(28px) saturate(1.5); border:1px solid rgba(255,255,255,.09); box-shadow:0 16px 44px -12px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.07);">
+          <div style="position:absolute; top:-7px; right:26px; width:13px; height:13px; background:rgba(24,22,36,.78); border-left:1px solid rgba(255,255,255,.09); border-top:1px solid rgba(255,255,255,.09); transform:rotate(45deg);"></div>
+          <div style="display:flex; align-items:center; gap:13px; margin-bottom:18px;"><div style="width:20px; height:20px; border-radius:50%; border:1.5px solid rgba(167,139,250,.85); display:flex; align-items:center; justify-content:center; box-shadow:0 0 8px rgba(167,139,250,.35); flex:none;"><div style="width:6px; height:6px; border-radius:50%; background:#c4b5fd;"></div></div><div style="font-size:16px; font-weight:600; letter-spacing:-.01em; color:rgba(255,255,255,.74);">Список покупок</div></div>
+          <div style="display:flex; align-items:center; gap:13px; margin-bottom:16px;"><div style="width:20px; height:20px; border-radius:50%; border:1.5px solid rgba(255,255,255,.34); flex:none;"></div><span style="font-size:16px; color:rgba(255,255,255,.93);">молоко</span></div>
+          <div style="display:flex; align-items:center; gap:13px; margin-bottom:16px;"><div style="width:20px; height:20px; border-radius:50%; background:#8b7fd0; display:flex; align-items:center; justify-content:center; flex:none;"><svg width="12" height="12" viewBox="0 0 9 9"><path d="M2 4.6 l1.6 1.6 l3.4 -4" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span style="font-size:16px; color:rgba(255,255,255,.4); text-decoration:line-through;">хлеб</span></div>
+          <div style="display:flex; align-items:center; gap:13px;"><div style="width:20px; height:20px; border-radius:50%; border:1.5px solid rgba(255,255,255,.34); flex:none;"></div><span style="font-size:16px; color:rgba(255,255,255,.93);">яйца</span></div>
+        </div>
+      </div>
+      <div style="font-family:'JetBrains Mono',ui-monospace,monospace; font-size:11px; color:#8a8894; margin-top:11px;"><span style="color:#8b5cf6;">view</span> · список — главное</div>
+    </div>
+
+    <!-- immersive -->
+    <div style="flex:none; width:248px;">
+      <div style="position:relative; min-height:236px; border-radius:18px; overflow:hidden; background:radial-gradient(120% 140% at 80% -20%, #241f38, #14111f 60%, #0d0b15); border:1px solid rgba(255,255,255,.05); display:flex; align-items:center; justify-content:center; padding:24px;">
+        <div style="position:relative; width:204px; padding:22px 22px 18px; border-radius:22px; background:rgba(24,22,36,.78); backdrop-filter:blur(28px) saturate(1.5); -webkit-backdrop-filter:blur(28px) saturate(1.5); border:1px solid rgba(255,255,255,.09); box-shadow:0 16px 44px -12px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.07);">
+          <div style="position:absolute; top:-7px; right:26px; width:13px; height:13px; background:rgba(24,22,36,.78); border-left:1px solid rgba(255,255,255,.09); border-top:1px solid rgba(255,255,255,.09); transform:rotate(45deg);"></div>
+          <div style="display:flex; align-items:center; gap:13px; margin-bottom:18px;">
+            <div style="position:relative; width:20px; height:20px; flex:none; display:flex; align-items:center; justify-content:center;">
+              <div style="position:absolute; width:20px; height:20px; border-radius:50%; border:1.5px solid rgba(167,139,250,.6); animation:vRipple 1.7s ease-out infinite;"></div>
+              <div style="position:absolute; width:20px; height:20px; border-radius:50%; border:1.5px solid rgba(167,139,250,.6); animation:vRipple 1.7s ease-out infinite; animation-delay:.85s;"></div>
+              <div style="width:20px; height:20px; border-radius:50%; border:1.5px solid rgba(167,139,250,.9); display:flex; align-items:center; justify-content:center; box-shadow:0 0 10px rgba(167,139,250,.5);"><div style="width:6px; height:6px; border-radius:50%; background:#c4b5fd; animation:vDot 1.3s ease-in-out infinite;"></div></div>
+            </div>
+            <div style="font-size:16px; font-weight:600; letter-spacing:-.01em; color:rgba(255,255,255,.74);">Список покупок</div>
+          </div>
+          <div style="display:flex; align-items:center; gap:13px; margin-bottom:15px;"><div style="width:20px; height:20px; border-radius:50%; border:1.5px solid rgba(255,255,255,.34); flex:none;"></div><span style="font-size:16px; color:rgba(255,255,255,.93);">молоко</span></div>
+          <div style="display:flex; align-items:center; gap:13px; margin-bottom:15px;"><div style="width:20px; height:20px; border-radius:50%; background:#8b7fd0; display:flex; align-items:center; justify-content:center; flex:none;"><svg width="12" height="12" viewBox="0 0 9 9"><path d="M2 4.6 l1.6 1.6 l3.4 -4" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span style="font-size:16px; color:rgba(255,255,255,.4); text-decoration:line-through;">хлеб</span></div>
+          <div style="display:flex; align-items:center; gap:10px; padding:10px 13px; border-radius:12px; background:rgba(167,139,250,.15); border:1px solid rgba(167,139,250,.2);"><div style="width:7px; height:7px; border-radius:50%; background:#c4b5fd; box-shadow:0 0 8px rgba(196,181,253,.9); animation:vDot 1.3s ease-in-out infinite; flex:none;"></div><span style="font-size:14px; color:rgba(255,255,255,.82);">добавь сыр</span></div>
+        </div>
+      </div>
+      <div style="font-family:'JetBrains Mono',ui-monospace,monospace; font-size:11px; color:#8a8894; margin-top:11px;"><span style="color:#8b5cf6;">immersive</span> · список + слушает</div>
+    </div>
+
+  </div>
+
+  <!-- ════ SECTION: IPHONE MORPH ════ -->
+  <div style="display:flex; align-items:baseline; gap:14px; margin-bottom:22px;">
+    <span style="font-family:'JetBrains Mono',ui-monospace,monospace; font-size:13px; color:#a8a6b0; font-weight:500;">03</span>
+    <h2 style="font-size:22px; letter-spacing:-.01em; margin:0; color:#1c1a24; font-weight:600;">iPhone 16 Pro Max · seamless morph</h2>
+    <span style="font-size:14px; color:#8a8894;">весь экран — оверлей</span>
+  </div>
+
+  <div style="display:flex; gap:40px; align-items:flex-start; margin-bottom:64px;">
+    <!-- MORPH PHONE -->
+    <div style="flex:none; width:322px; height:700px; border-radius:58px; background:#08070c; padding:13px; box-shadow:0 24px 70px -18px rgba(0,0,0,.55), inset 0 0 0 2px rgba(255,255,255,.06); position:relative;">
+      <div style="width:100%; height:100%; border-radius:46px; overflow:hidden; background:radial-gradient(125% 80% at 50% 0%,#2a2440 0%,#161325 46%,#0a0812 100%); position:relative;">
+        <div style="position:absolute; top:15px; left:50%; transform:translateX(-50%); width:120px; height:35px; background:#000; border-radius:18px; z-index:6; display:flex; align-items:center; justify-content:center;"><div style="width:14px; height:14px; border-radius:50%; border:1.6px solid #c4b5fd; box-shadow:0 0 8px rgba(167,139,250,.8);"></div></div>
+        <div style="position:absolute; top:19px; left:26px; color:rgba(255,255,255,.9); font-size:15px; font-weight:600; z-index:6;">9:41</div>
+
+        <!-- list group -->
+        <div style="position:absolute; top:92px; left:0; right:0; bottom:0; padding:0 30px; opacity:0; animation:mList 14s linear infinite;">
+          <div style="margin:0 0 26px 36px; font-size:23px; font-weight:700; letter-spacing:-.02em; color:#fff;">Список покупок</div>
+          <div style="display:flex; align-items:center; gap:14px; margin-bottom:22px;"><div style="width:22px; height:22px; border-radius:50%; border:1.5px solid rgba(255,255,255,.34); flex:none;"></div><span style="font-size:19px; color:rgba(255,255,255,.93);">молоко</span></div>
+          <div style="display:flex; align-items:center; gap:14px; margin-bottom:22px;"><div style="width:22px; height:22px; border-radius:50%; background:#8b7fd0; display:flex; align-items:center; justify-content:center; flex:none;"><svg width="13" height="13" viewBox="0 0 9 9"><path d="M2 4.6 l1.6 1.6 l3.4 -4" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span style="font-size:19px; color:rgba(255,255,255,.4); text-decoration:line-through;">хлеб</span></div>
+          <div style="display:flex; align-items:center; gap:14px; margin-bottom:22px;"><div style="width:22px; height:22px; border-radius:50%; border:1.5px solid rgba(255,255,255,.34); flex:none;"></div><span style="font-size:19px; color:rgba(255,255,255,.93);">яйца</span></div>
+          <div style="display:flex; align-items:center; gap:14px; margin-bottom:0;"><div style="width:22px; height:22px; border-radius:50%; background:#8b7fd0; display:flex; align-items:center; justify-content:center; flex:none;"><svg width="13" height="13" viewBox="0 0 9 9"><path d="M2 4.6 l1.6 1.6 l3.4 -4" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span style="font-size:19px; color:rgba(255,255,255,.4); text-decoration:line-through;">кофе</span></div>
+          <div style="display:flex; align-items:center; gap:14px; overflow:hidden; animation:mAddRow 14s linear infinite;"><div style="width:22px; height:22px; border-radius:50%; border:1.5px solid rgba(167,139,250,.7); flex:none; box-shadow:0 0 8px rgba(167,139,250,.4);"></div><span style="font-size:19px; color:rgba(255,255,255,.93);">сыр</span></div>
+        </div>
+
+        <!-- mark -->
+        <div style="position:absolute; top:0; left:0; width:200px; height:200px; display:flex; align-items:center; justify-content:center; transform:translate(49px,238px); animation:mMarkM 14s linear infinite, mMarkFade 14s linear infinite;">
+          <div style="position:absolute; width:140px; height:140px; opacity:0; animation:mRippleGate 14s linear infinite;">
+            <div style="position:absolute; inset:0; border-radius:50%; border:2.5px solid rgba(167,139,250,.55); animation:vRipple 1.7s ease-out infinite;"></div>
+            <div style="position:absolute; inset:0; border-radius:50%; border:2.5px solid rgba(167,139,250,.55); animation:vRipple 1.7s ease-out infinite; animation-delay:.85s;"></div>
+          </div>
+          <div style="position:absolute; width:200px; height:200px; border-radius:50%; background:radial-gradient(circle, rgba(167,139,250,.36), transparent 66%); animation:vHalo 2.6s ease-in-out infinite, mHalo 14s linear infinite;"></div>
+          <div style="position:absolute; width:140px; height:140px; border-radius:50%; border:3px solid rgba(167,139,250,.85); animation:mRing 14s linear infinite;"></div>
+          <div style="position:absolute; width:28px; height:28px; border-radius:50%; background:radial-gradient(circle,#efeaff,#a78bfa); box-shadow:0 0 22px rgba(167,139,250,.9); animation:mCore 14s linear infinite;"></div>
+          <div style="position:absolute; display:flex; align-items:center; gap:6px; height:60px; animation:mWave 14s linear infinite;">
+            <div style="width:5px; height:60px; border-radius:3px; background:#c4b5fd; transform-origin:center; animation:vWave 1s ease-in-out infinite;"></div>
+            <div style="width:5px; height:60px; border-radius:3px; background:#c4b5fd; transform-origin:center; animation:vWave .9s ease-in-out infinite; animation-delay:.18s;"></div>
+            <div style="width:5px; height:60px; border-radius:3px; background:#d6cbff; transform-origin:center; animation:vWave 1.1s ease-in-out infinite; animation-delay:.05s;"></div>
+            <div style="width:5px; height:60px; border-radius:3px; background:#c4b5fd; transform-origin:center; animation:vWave .95s ease-in-out infinite; animation-delay:.28s;"></div>
+            <div style="width:5px; height:60px; border-radius:3px; background:#c4b5fd; transform-origin:center; animation:vWave 1.05s ease-in-out infinite; animation-delay:.12s;"></div>
+          </div>
+          <svg width="200" height="200" viewBox="0 0 200 200" style="position:absolute; animation:vSpin .85s linear infinite, mArc 14s linear infinite;"><circle cx="100" cy="100" r="72" fill="none" stroke="#a78bfa" stroke-width="5" stroke-linecap="round" stroke-dasharray="120 380"/></svg>
+          <svg width="200" height="200" viewBox="0 0 200 200" style="position:absolute; animation:vSpinRev 1.1s linear infinite, mArc2 14s linear infinite;"><circle cx="100" cy="100" r="54" fill="none" stroke="#c4b5fd" stroke-width="4" stroke-linecap="round" stroke-dasharray="80 300"/></svg>
+          <svg width="140" height="140" viewBox="0 0 140 140" style="position:absolute; animation:mCheck 14s linear infinite;"><path d="M48 72 l16 16 l32 -40" fill="none" stroke="#efeaff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+
+        <!-- transcript caption -->
+        <div style="position:absolute; top:60%; left:0; right:0; text-align:center; font-size:18px; line-height:1.45; color:rgba(255,255,255,.6); padding:0 44px; animation:mCap 14s linear infinite;">добавь молоко и хлеб в список покупок</div>
+        <!-- live caption -->
+        <div style="position:absolute; bottom:42px; left:30px; right:30px; display:flex; align-items:center; gap:11px; padding:14px 18px; border-radius:16px; background:rgba(167,139,250,.15); border:1px solid rgba(167,139,250,.2); animation:mLiveCap 14s linear infinite;">
+          <div style="width:9px; height:9px; border-radius:50%; background:#c4b5fd; box-shadow:0 0 8px rgba(196,181,253,.9); animation:vDot 1.3s ease-in-out infinite; flex:none;"></div>
+          <span style="font-size:17px; color:rgba(255,255,255,.82);">добавь сыр</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="flex:none; width:300px; align-self:center;">
+      <p style="font-size:15px; line-height:1.6; color:#6a6874; margin:0; text-wrap:pretty;">На телефоне нет трея — Vega живёт в Dynamic Island и при разговоре <b style="color:#1c1a24;">разворачивается на весь экран</b>. Тот же морф, тот же violet: метка приезжает в колонку списка, а в immersive снова пульсирует.</p>
+    </div>
+  </div>
+
+  <!-- ════ SECTION: IPHONE STATES ════ -->
+  <div style="display:flex; align-items:baseline; gap:14px; margin-bottom:22px;">
+    <span style="font-family:'JetBrains Mono',ui-monospace,monospace; font-size:13px; color:#a8a6b0; font-weight:500;">04</span>
+    <h2 style="font-size:22px; letter-spacing:-.01em; margin:0; color:#1c1a24; font-weight:600;">iPhone · states</h2>
+    <span style="font-size:14px; color:#8a8894;">каждое состояние отдельно</span>
+  </div>
+
+  <div style="display:flex; gap:30px; align-items:flex-start; margin-bottom:24px;">
+
+    <!-- P listening -->
+    <div style="flex:none; width:300px;">
+      <div style="width:300px; height:650px; border-radius:54px; background:#08070c; padding:12px; box-shadow:0 22px 64px -18px rgba(0,0,0,.55), inset 0 0 0 2px rgba(255,255,255,.06); position:relative;">
+        <div style="width:100%; height:100%; border-radius:44px; overflow:hidden; background:radial-gradient(125% 80% at 50% 0%,#2a2440,#161325 46%,#0a0812); position:relative;">
+          <div style="position:absolute; top:14px; left:50%; transform:translateX(-50%); width:112px; height:33px; background:#000; border-radius:17px; z-index:5; display:flex; align-items:center; justify-content:center;"><div style="width:13px; height:13px; border-radius:50%; border:1.6px solid #c4b5fd; box-shadow:0 0 8px rgba(167,139,250,.8);"></div></div>
+          <div style="position:absolute; top:18px; left:24px; color:rgba(255,255,255,.9); font-size:14px; font-weight:600; z-index:5;">9:41</div>
+          <div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:40px;">
+            <div style="position:relative; width:168px; height:168px; display:flex; align-items:center; justify-content:center;">
+              <div style="position:absolute; width:168px; height:168px; border-radius:50%; background:radial-gradient(circle,rgba(167,139,250,.34),transparent 66%); animation:vHalo 2.6s ease-in-out infinite;"></div>
+              <div style="position:absolute; width:116px; height:116px; border-radius:50%; border:3px solid rgba(167,139,250,.85); box-shadow:0 0 28px rgba(167,139,250,.5),inset 0 0 20px rgba(167,139,250,.22);"></div>
+              <div style="width:24px; height:24px; border-radius:50%; background:radial-gradient(circle,#efeaff,#a78bfa); box-shadow:0 0 20px rgba(167,139,250,.9); animation:vDot 2.6s ease-in-out infinite;"></div>
+            </div>
+            <div style="font-size:18px; color:rgba(255,255,255,.6); text-align:center; padding:0 44px; line-height:1.4;">Скажите, что нужно сделать</div>
+          </div>
+        </div>
+      </div>
+      <div style="font-family:'JetBrains Mono',ui-monospace,monospace; font-size:11px; color:#8a8894; margin-top:12px;"><span style="color:#8b5cf6;">listening</span></div>
+    </div>
+
+    <!-- P capturing -->
+    <div style="flex:none; width:300px;">
+      <div style="width:300px; height:650px; border-radius:54px; background:#08070c; padding:12px; box-shadow:0 22px 64px -18px rgba(0,0,0,.55), inset 0 0 0 2px rgba(255,255,255,.06); position:relative;">
+        <div style="width:100%; height:100%; border-radius:44px; overflow:hidden; background:radial-gradient(125% 80% at 50% 0%,#2a2440,#161325 46%,#0a0812); position:relative;">
+          <div style="position:absolute; top:14px; left:50%; transform:translateX(-50%); width:112px; height:33px; background:#000; border-radius:17px; z-index:5; display:flex; align-items:center; justify-content:center;"><div style="width:13px; height:13px; border-radius:50%; border:1.6px solid #c4b5fd; box-shadow:0 0 8px rgba(167,139,250,.8);"></div></div>
+          <div style="position:absolute; top:18px; left:24px; color:rgba(255,255,255,.9); font-size:14px; font-weight:600; z-index:5;">9:41</div>
+          <div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:40px;">
+            <div style="position:relative; width:168px; height:168px; display:flex; align-items:center; justify-content:center;">
+              <div style="position:absolute; width:116px; height:116px; border-radius:50%; border:3px solid rgba(185,166,252,.7); box-shadow:0 0 24px rgba(167,139,250,.35);"></div>
+              <div style="display:flex; align-items:center; gap:6px; height:54px;">
+                <div style="width:5px; height:54px; border-radius:3px; background:#c4b5fd; transform-origin:center; animation:vWave 1s ease-in-out infinite;"></div>
+                <div style="width:5px; height:54px; border-radius:3px; background:#c4b5fd; transform-origin:center; animation:vWave .9s ease-in-out infinite; animation-delay:.18s;"></div>
+                <div style="width:5px; height:54px; border-radius:3px; background:#d6cbff; transform-origin:center; animation:vWave 1.1s ease-in-out infinite; animation-delay:.05s;"></div>
+                <div style="width:5px; height:54px; border-radius:3px; background:#c4b5fd; transform-origin:center; animation:vWave .95s ease-in-out infinite; animation-delay:.28s;"></div>
+                <div style="width:5px; height:54px; border-radius:3px; background:#c4b5fd; transform-origin:center; animation:vWave 1.05s ease-in-out infinite; animation-delay:.12s;"></div>
+              </div>
+            </div>
+            <div style="font-size:18px; color:rgba(255,255,255,.82); text-align:center; padding:0 40px; line-height:1.4;">добавь молоко и хлеб в список покупок</div>
+          </div>
+        </div>
+      </div>
+      <div style="font-family:'JetBrains Mono',ui-monospace,monospace; font-size:11px; color:#8a8894; margin-top:12px;"><span style="color:#8b5cf6;">capturing</span></div>
+    </div>
+
+    <!-- P thinking -->
+    <div style="flex:none; width:300px;">
+      <div style="width:300px; height:650px; border-radius:54px; background:#08070c; padding:12px; box-shadow:0 22px 64px -18px rgba(0,0,0,.55), inset 0 0 0 2px rgba(255,255,255,.06); position:relative;">
+        <div style="width:100%; height:100%; border-radius:44px; overflow:hidden; background:radial-gradient(125% 80% at 50% 0%,#2a2440,#161325 46%,#0a0812); position:relative;">
+          <div style="position:absolute; top:14px; left:50%; transform:translateX(-50%); width:112px; height:33px; background:#000; border-radius:17px; z-index:5; display:flex; align-items:center; justify-content:center;"><div style="width:13px; height:13px; border-radius:50%; border:1.6px solid #c4b5fd; box-shadow:0 0 8px rgba(167,139,250,.8);"></div></div>
+          <div style="position:absolute; top:18px; left:24px; color:rgba(255,255,255,.9); font-size:14px; font-weight:600; z-index:5;">9:41</div>
+          <div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:40px;">
+            <div style="position:relative; width:168px; height:168px; display:flex; align-items:center; justify-content:center;">
+              <div style="position:absolute; width:116px; height:116px; border-radius:50%; border:2.5px solid rgba(167,139,250,.16);"></div>
+              <svg width="168" height="168" viewBox="0 0 168 168" style="position:absolute; animation:vSpin 1s linear infinite;"><circle cx="84" cy="84" r="58" fill="none" stroke="#a78bfa" stroke-width="5" stroke-linecap="round" stroke-dasharray="100 280"/></svg>
+              <div style="width:14px; height:14px; border-radius:50%; background:rgba(167,139,250,.5);"></div>
+            </div>
+            <div style="font-size:18px; color:rgba(255,255,255,.82); text-align:center; padding:0 40px; line-height:1.4;">добавь молоко и хлеб в список покупок</div>
+          </div>
+        </div>
+      </div>
+      <div style="font-family:'JetBrains Mono',ui-monospace,monospace; font-size:11px; color:#8a8894; margin-top:12px;"><span style="color:#8b5cf6;">thinking</span></div>
+    </div>
+
+    <!-- P processing -->
+    <div style="flex:none; width:300px;">
+      <div style="width:300px; height:650px; border-radius:54px; background:#08070c; padding:12px; box-shadow:0 22px 64px -18px rgba(0,0,0,.55), inset 0 0 0 2px rgba(255,255,255,.06); position:relative;">
+        <div style="width:100%; height:100%; border-radius:44px; overflow:hidden; background:radial-gradient(125% 80% at 50% 0%,#2a2440,#161325 46%,#0a0812); position:relative;">
+          <div style="position:absolute; top:14px; left:50%; transform:translateX(-50%); width:112px; height:33px; background:#000; border-radius:17px; z-index:5; display:flex; align-items:center; justify-content:center;"><div style="width:13px; height:13px; border-radius:50%; border:1.6px solid #c4b5fd; box-shadow:0 0 8px rgba(167,139,250,.8);"></div></div>
+          <div style="position:absolute; top:18px; left:24px; color:rgba(255,255,255,.9); font-size:14px; font-weight:600; z-index:5;">9:41</div>
+          <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center;">
+            <div style="position:relative; width:168px; height:168px; display:flex; align-items:center; justify-content:center;">
+              <svg width="168" height="168" viewBox="0 0 168 168" style="position:absolute; animation:vSpin .7s linear infinite;"><circle cx="84" cy="84" r="62" fill="none" stroke="#c4b5fd" stroke-width="5" stroke-linecap="round" stroke-dasharray="124 320"/></svg>
+              <svg width="168" height="168" viewBox="0 0 168 168" style="position:absolute; animation:vSpinRev 1s linear infinite;"><circle cx="84" cy="84" r="46" fill="none" stroke="#8b5cf6" stroke-width="4.5" stroke-linecap="round" stroke-dasharray="66 240"/></svg>
+              <div style="width:16px; height:16px; border-radius:50%; background:#d6cbff; box-shadow:0 0 20px rgba(196,181,253,.9);"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="font-family:'JetBrains Mono',ui-monospace,monospace; font-size:11px; color:#8a8894; margin-top:12px;"><span style="color:#8b5cf6;">processing</span></div>
+    </div>
+
+    <!-- P success -->
+    <div style="flex:none; width:300px;">
+      <div style="width:300px; height:650px; border-radius:54px; background:#08070c; padding:12px; box-shadow:0 22px 64px -18px rgba(0,0,0,.55), inset 0 0 0 2px rgba(255,255,255,.06); position:relative;">
+        <div style="width:100%; height:100%; border-radius:44px; overflow:hidden; background:radial-gradient(125% 80% at 50% 0%,#2a2440,#161325 46%,#0a0812); position:relative;">
+          <div style="position:absolute; top:14px; left:50%; transform:translateX(-50%); width:112px; height:33px; background:#000; border-radius:17px; z-index:5; display:flex; align-items:center; justify-content:center;"><div style="width:13px; height:13px; border-radius:50%; border:1.6px solid #c4b5fd; box-shadow:0 0 8px rgba(167,139,250,.8);"></div></div>
+          <div style="position:absolute; top:18px; left:24px; color:rgba(255,255,255,.9); font-size:14px; font-weight:600; z-index:5;">9:41</div>
+          <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center;">
+            <div style="position:relative; width:168px; height:168px; display:flex; align-items:center; justify-content:center;">
+              <div style="position:absolute; width:168px; height:168px; border-radius:50%; background:radial-gradient(circle,rgba(214,203,255,.36),transparent 64%);"></div>
+              <div style="position:absolute; width:116px; height:116px; border-radius:50%; border:3.5px solid #d6cbff; box-shadow:0 0 32px rgba(214,203,255,.6),inset 0 0 22px rgba(214,203,255,.3);"></div>
+              <svg width="116" height="116" viewBox="0 0 116 116"><path d="M39 60 l14 14 l27 -34" fill="none" stroke="#efeaff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="font-family:'JetBrains Mono',ui-monospace,monospace; font-size:11px; color:#8a8894; margin-top:12px;"><span style="color:#8b5cf6;">success</span></div>
+    </div>
+
+    <!-- P error -->
+    <div style="flex:none; width:300px;">
+      <div style="width:300px; height:650px; border-radius:54px; background:#08070c; padding:12px; box-shadow:0 22px 64px -18px rgba(0,0,0,.55), inset 0 0 0 2px rgba(255,255,255,.06); position:relative;">
+        <div style="width:100%; height:100%; border-radius:44px; overflow:hidden; background:radial-gradient(125% 80% at 50% 0%,#241d2e,#15121c 46%,#0a0812); position:relative;">
+          <div style="position:absolute; top:14px; left:50%; transform:translateX(-50%); width:112px; height:33px; background:#000; border-radius:17px; z-index:5; display:flex; align-items:center; justify-content:center;"><div style="width:13px; height:13px; border-radius:50%; border:1.6px solid #9a93b8; box-shadow:0 0 6px rgba(154,147,184,.6);"></div></div>
+          <div style="position:absolute; top:18px; left:24px; color:rgba(255,255,255,.9); font-size:14px; font-weight:600; z-index:5;">9:41</div>
+          <div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:36px;">
+            <div style="position:relative; width:168px; height:168px; display:flex; align-items:center; justify-content:center;">
+              <div style="position:absolute; width:116px; height:116px; border-radius:50%; border:2.5px dashed rgba(154,147,184,.7);"></div>
+              <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
+                <div style="width:5px; height:34px; border-radius:3px; background:#a8a2c0;"></div>
+                <div style="width:5px; height:5px; border-radius:50%; background:#a8a2c0;"></div>
+              </div>
+            </div>
+            <div style="font-size:19px; font-weight:600; color:rgba(255,255,255,.82); text-align:center; padding:0 40px;">Не понял запрос</div>
+          </div>
+        </div>
+      </div>
+      <div style="font-family:'JetBrains Mono',ui-monospace,monospace; font-size:11px; color:#8a8894; margin-top:12px;"><span style="color:#8b5cf6;">error</span></div>
+    </div>
+
+    <!-- P view -->
+    <div style="flex:none; width:300px;">
+      <div style="width:300px; height:650px; border-radius:54px; background:#08070c; padding:12px; box-shadow:0 22px 64px -18px rgba(0,0,0,.55), inset 0 0 0 2px rgba(255,255,255,.06); position:relative;">
+        <div style="width:100%; height:100%; border-radius:44px; overflow:hidden; background:radial-gradient(125% 70% at 50% 0%,#221d36,#14111f 50%,#0a0812); position:relative;">
+          <div style="position:absolute; top:14px; left:50%; transform:translateX(-50%); width:112px; height:33px; background:#000; border-radius:17px; z-index:5; display:flex; align-items:center; justify-content:center;"><div style="width:18px; height:18px; border-radius:50%; border:1.5px solid rgba(167,139,250,.85); display:flex; align-items:center; justify-content:center;"><div style="width:5px; height:5px; border-radius:50%; background:#c4b5fd;"></div></div></div>
+          <div style="position:absolute; top:18px; left:24px; color:rgba(255,255,255,.9); font-size:14px; font-weight:600; z-index:5;">9:41</div>
+          <div style="position:absolute; top:92px; left:0; right:0; bottom:0; padding:0 30px;">
+            <div style="font-size:23px; font-weight:700; letter-spacing:-.02em; color:#fff; margin-bottom:26px;">Список покупок</div>
+            <div style="display:flex; align-items:center; gap:14px; margin-bottom:22px;"><div style="width:22px; height:22px; border-radius:50%; border:1.5px solid rgba(255,255,255,.34); flex:none;"></div><span style="font-size:19px; color:rgba(255,255,255,.93);">молоко</span></div>
+            <div style="display:flex; align-items:center; gap:14px; margin-bottom:22px;"><div style="width:22px; height:22px; border-radius:50%; background:#8b7fd0; display:flex; align-items:center; justify-content:center; flex:none;"><svg width="13" height="13" viewBox="0 0 9 9"><path d="M2 4.6 l1.6 1.6 l3.4 -4" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span style="font-size:19px; color:rgba(255,255,255,.4); text-decoration:line-through;">хлеб</span></div>
+            <div style="display:flex; align-items:center; gap:14px; margin-bottom:22px;"><div style="width:22px; height:22px; border-radius:50%; border:1.5px solid rgba(255,255,255,.34); flex:none;"></div><span style="font-size:19px; color:rgba(255,255,255,.93);">яйца</span></div>
+            <div style="display:flex; align-items:center; gap:14px;"><div style="width:22px; height:22px; border-radius:50%; background:#8b7fd0; display:flex; align-items:center; justify-content:center; flex:none;"><svg width="13" height="13" viewBox="0 0 9 9"><path d="M2 4.6 l1.6 1.6 l3.4 -4" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span style="font-size:19px; color:rgba(255,255,255,.4); text-decoration:line-through;">кофе</span></div>
+          </div>
+        </div>
+      </div>
+      <div style="font-family:'JetBrains Mono',ui-monospace,monospace; font-size:11px; color:#8a8894; margin-top:12px;"><span style="color:#8b5cf6;">view</span></div>
+    </div>
+
+    <!-- P immersive -->
+    <div style="flex:none; width:300px;">
+      <div style="width:300px; height:650px; border-radius:54px; background:#08070c; padding:12px; box-shadow:0 22px 64px -18px rgba(0,0,0,.55), inset 0 0 0 2px rgba(255,255,255,.06); position:relative;">
+        <div style="width:100%; height:100%; border-radius:44px; overflow:hidden; background:radial-gradient(125% 70% at 50% 0%,#221d36,#14111f 50%,#0a0812); position:relative;">
+          <div style="position:absolute; top:14px; left:50%; transform:translateX(-50%); width:112px; height:33px; background:#000; border-radius:17px; z-index:5; display:flex; align-items:center; justify-content:center; gap:7px;"><div style="width:6px; height:6px; border-radius:50%; background:#c4b5fd; box-shadow:0 0 8px rgba(196,181,253,.9); animation:vDot 1.3s ease-in-out infinite;"></div><span style="font-size:11px; color:rgba(255,255,255,.7); font-family:'JetBrains Mono',monospace;">слушаю</span></div>
+          <div style="position:absolute; top:18px; left:24px; color:rgba(255,255,255,.9); font-size:14px; font-weight:600; z-index:5;">9:41</div>
+          <div style="position:absolute; top:92px; left:0; right:0; bottom:0; padding:0 30px;">
+            <div style="display:flex; align-items:center; gap:14px; margin-bottom:26px;">
+              <div style="position:relative; width:24px; height:24px; flex:none; display:flex; align-items:center; justify-content:center;">
+                <div style="position:absolute; width:24px; height:24px; border-radius:50%; border:1.5px solid rgba(167,139,250,.6); animation:vRipple 1.7s ease-out infinite;"></div>
+                <div style="position:absolute; width:24px; height:24px; border-radius:50%; border:1.5px solid rgba(167,139,250,.6); animation:vRipple 1.7s ease-out infinite; animation-delay:.85s;"></div>
+                <div style="width:24px; height:24px; border-radius:50%; border:1.5px solid rgba(167,139,250,.9); box-shadow:0 0 12px rgba(167,139,250,.5); display:flex; align-items:center; justify-content:center;"><div style="width:7px; height:7px; border-radius:50%; background:#c4b5fd;"></div></div>
+              </div>
+              <div style="font-size:23px; font-weight:700; letter-spacing:-.02em; color:#fff;">Список покупок</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:14px; margin-bottom:22px;"><div style="width:22px; height:22px; border-radius:50%; border:1.5px solid rgba(255,255,255,.34); flex:none;"></div><span style="font-size:19px; color:rgba(255,255,255,.93);">молоко</span></div>
+            <div style="display:flex; align-items:center; gap:14px; margin-bottom:22px;"><div style="width:22px; height:22px; border-radius:50%; background:#8b7fd0; display:flex; align-items:center; justify-content:center; flex:none;"><svg width="13" height="13" viewBox="0 0 9 9"><path d="M2 4.6 l1.6 1.6 l3.4 -4" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span style="font-size:19px; color:rgba(255,255,255,.4); text-decoration:line-through;">хлеб</span></div>
+            <div style="display:flex; align-items:center; gap:14px;"><div style="width:22px; height:22px; border-radius:50%; border:1.5px solid rgba(255,255,255,.34); flex:none;"></div><span style="font-size:19px; color:rgba(255,255,255,.93);">яйца</span></div>
+            <div style="position:absolute; bottom:42px; left:30px; right:30px; display:flex; align-items:center; gap:11px; padding:14px 18px; border-radius:16px; background:rgba(167,139,250,.15); border:1px solid rgba(167,139,250,.2);"><div style="width:9px; height:9px; border-radius:50%; background:#c4b5fd; box-shadow:0 0 8px rgba(196,181,253,.9); animation:vDot 1.3s ease-in-out infinite; flex:none;"></div><span style="font-size:17px; color:rgba(255,255,255,.82);">добавь сыр</span></div>
+          </div>
+        </div>
+      </div>
+      <div style="font-family:'JetBrains Mono',ui-monospace,monospace; font-size:11px; color:#8a8894; margin-top:12px;"><span style="color:#8b5cf6;">immersive</span></div>
+    </div>
+
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

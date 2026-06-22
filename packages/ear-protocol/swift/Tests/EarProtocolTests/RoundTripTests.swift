@@ -42,6 +42,7 @@ final class RoundTripTests: XCTestCase {
     }
 
     func testRegister() throws { try roundTrip(RegisterMessage.self, key: "register") }
+    func testRegisterVad() throws { try roundTrip(RegisterMessage.self, key: "register_vad") }
     func testWakeDetected() throws { try roundTrip(WakeDetectedMessage.self, key: "wake_detected") }
     func testSessionStart() throws { try roundTrip(SessionStartMessage.self, key: "session_start") }
     func testEarSessionEnd() throws { try roundTrip(EarSessionEndMessage.self, key: "ear_session_end") }

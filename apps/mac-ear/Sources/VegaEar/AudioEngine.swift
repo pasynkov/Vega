@@ -1,6 +1,7 @@
 import AudioToolbox
 import AVFoundation
 import CoreAudio
+import EarCore
 import Foundation
 
 // Captures PCM from the chosen input device at the device's native sample
@@ -14,7 +15,7 @@ import Foundation
 // the Ear is running. AUHAL with output IO disabled never opens the output
 // device, so the headset stays in A2DP.
 
-final class AudioEngine {
+final class AudioEngine: AudioCapturing {
     typealias PCMSink = (Data) -> Void
 
     private var audioUnit: AudioUnit?
@@ -24,9 +25,6 @@ final class AudioEngine {
 
     private let queue = DispatchQueue(label: "vega.ear.audio", qos: .userInitiated)
     private var sinks: [PCMSink] = []
-    private var preRollBuffers: [Data] = []
-    private var preRollByteCount: Int = 0
-    private var preRollMaxBytes: Int = 96_000
     private(set) var isRunning = false
     private(set) var currentDevice: MicDevice?
     private(set) var currentSampleRate: Double = 48_000
@@ -139,7 +137,6 @@ final class AudioEngine {
             throw Self.makeError("Set client format", code: st)
         }
         currentSampleRate = hwRate
-        preRollMaxBytes = Int(hwRate) * MemoryLayout<Int16>.size
 
         let maxFrames: UInt32 = 4096
         var maxSlice = maxFrames
@@ -226,16 +223,6 @@ final class AudioEngine {
         queue.async { self.sinks.append(sink) }
     }
 
-    func drainPreRoll() -> [Data] {
-        var copy: [Data] = []
-        queue.sync {
-            copy = preRollBuffers
-            preRollBuffers.removeAll(keepingCapacity: true)
-            preRollByteCount = 0
-        }
-        return copy
-    }
-
     private func handleInput(
         ioActionFlags: UnsafeMutablePointer<AudioUnitRenderActionFlags>,
         timeStamp: UnsafePointer<AudioTimeStamp>,
@@ -274,7 +261,6 @@ final class AudioEngine {
         }
         if data.isEmpty { return noErr }
         queue.async {
-            self.pushPreRoll(data)
             if self.sinks.isEmpty && self.callbackCount <= 3 {
                 NSLog("[VegaEar] AUHAL callback #\(self.callbackCount): WARNING sinks is empty, data discarded")
             }
@@ -283,15 +269,6 @@ final class AudioEngine {
             }
         }
         return noErr
-    }
-
-    private func pushPreRoll(_ data: Data) {
-        preRollBuffers.append(data)
-        preRollByteCount += data.count
-        while preRollByteCount > preRollMaxBytes && preRollBuffers.count > 1 {
-            let dropped = preRollBuffers.removeFirst()
-            preRollByteCount -= dropped.count
-        }
     }
 
     private func disposeRenderBuffers() {
@@ -325,24 +302,3 @@ final class AudioEngine {
     }
 }
 
-struct RingBuffer<Element> {
-    private var storage: [Element] = []
-    private let capacityHint: Int
-
-    init(capacityHint: Int) {
-        self.capacityHint = capacityHint
-    }
-
-    mutating func push(_ element: Element) {
-        storage.append(element)
-        if storage.count > capacityHint {
-            storage.removeFirst(storage.count - capacityHint)
-        }
-    }
-
-    mutating func drain() -> [Element] {
-        let out = storage
-        storage.removeAll(keepingCapacity: true)
-        return out
-    }
-}

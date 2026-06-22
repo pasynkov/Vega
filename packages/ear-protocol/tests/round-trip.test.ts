@@ -25,6 +25,7 @@ const fixtures = JSON.parse(readFileSync(fixturesPath, "utf-8")) as Record<strin
 
 const cases = [
   { name: "register", schema: RegisterMessageSchema, key: "register" },
+  { name: "register vad", schema: RegisterMessageSchema, key: "register_vad" },
   { name: "wake_detected", schema: WakeDetectedMessageSchema, key: "wake_detected" },
   { name: "session_start", schema: SessionStartMessageSchema, key: "session_start" },
   { name: "ear_session_end", schema: EarSessionEndMessageSchema, key: "ear_session_end" },

@@ -24,9 +24,15 @@ public enum EventName {
 
 // MARK: - Enums
 
+// `vad` declares that the device opens `session_start` on voice-activity
+// detection rather than wake-word. A `vad`-only device emits `session_start`
+// with no prior `wake_detected`. A device may declare both `wake` and `vad`
+// (multi-modal). Core does not enforce the wake precondition today; clients
+// SHALL follow the contract appropriate to their declared capabilities.
 public enum Capability: String, Codable, CaseIterable, Sendable {
     case mic
     case wake
+    case vad
     case speaker
     case display
 }
@@ -256,6 +262,13 @@ public struct RawOverlayState: Sendable, Equatable {
     public let hint: String?
     public let caption: String?
     public let rawSound: String?
+
+    public init(rawKind: String, hint: String?, caption: String?, rawSound: String?) {
+        self.rawKind = rawKind
+        self.hint = hint
+        self.caption = caption
+        self.rawSound = rawSound
+    }
 }
 
 public struct ListItem: Codable, Sendable, Equatable {

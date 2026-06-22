@@ -1,0 +1,401 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		2021F707FAC7997151A24CE3 /* iOSCuePlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CEBB2265F88A88A81868723 /* iOSCuePlayer.swift */; };
+		3D55A629B46B67DC060B65E1 /* VegaEariOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF083A315C6B915142462B79 /* VegaEariOSApp.swift */; };
+		533A8434392634A885659F37 /* EarUI in Frameworks */ = {isa = PBXBuildFile; productRef = F800ECF4873A04A58AC2E57C /* EarUI */; };
+		5DA494888ED694BDD1170BB8 /* iOSStatusController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E37EB13DCE4920325BE743ED /* iOSStatusController.swift */; };
+		77BF5A79A359F39547289A5D /* EarProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = F3C7D0174E55346B699A209C /* EarProtocol */; };
+		94652C66940536C24F03A85E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = EBAA26A9936AB343055D9FD3 /* Assets.xcassets */; };
+		A1AE60F0F8658EC7CBA97EB1 /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = A1922AB1EA0494B8A2A8C587 /* Settings.bundle */; };
+		A49ED2D76D5A809855AC8758 /* AppCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C999CC2A8B6BDA9688232375 /* AppCoordinator.swift */; };
+		AD66820EDB7648E48A271C4A /* iOSAudioCapturing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90CEBB67ACF11A4C091CEEAC /* iOSAudioCapturing.swift */; };
+		B2F90F020CE54CC93BA176A2 /* EarCore in Frameworks */ = {isa = PBXBuildFile; productRef = 86F781D90AD10CA3A8C83327 /* EarCore */; };
+		C9CCCD20A720F26C3C026873 /* iOSOverlayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 180CD16C64936FF6A7BF534B /* iOSOverlayController.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		180CD16C64936FF6A7BF534B /* iOSOverlayController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSOverlayController.swift; sourceTree = "<group>"; };
+		6EE697B0F3948D2DBA9CE9E8 /* VegaEariOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = VegaEariOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		89ABA875BDF16373239CB619 /* ear-core */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "ear-core"; path = "../../packages/ear-core"; sourceTree = SOURCE_ROOT; };
+		8CEBB2265F88A88A81868723 /* iOSCuePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSCuePlayer.swift; sourceTree = "<group>"; };
+		90CEBB67ACF11A4C091CEEAC /* iOSAudioCapturing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSAudioCapturing.swift; sourceTree = "<group>"; };
+		A1922AB1EA0494B8A2A8C587 /* Settings.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = Settings.bundle; sourceTree = "<group>"; };
+		C999CC2A8B6BDA9688232375 /* AppCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCoordinator.swift; sourceTree = "<group>"; };
+		C9E6E7FE8BBA343B323C1578 /* swift */ = {isa = PBXFileReference; lastKnownFileType = folder; name = swift; path = "../../packages/ear-protocol/swift"; sourceTree = SOURCE_ROOT; };
+		E37EB13DCE4920325BE743ED /* iOSStatusController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSStatusController.swift; sourceTree = "<group>"; };
+		EBAA26A9936AB343055D9FD3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F2D707E910205C873DD500E9 /* ear-ui */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "ear-ui"; path = "../../packages/ear-ui"; sourceTree = SOURCE_ROOT; };
+		FF083A315C6B915142462B79 /* VegaEariOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VegaEariOSApp.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D5866C1D20C3DC817CDF3155 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				77BF5A79A359F39547289A5D /* EarProtocol in Frameworks */,
+				B2F90F020CE54CC93BA176A2 /* EarCore in Frameworks */,
+				533A8434392634A885659F37 /* EarUI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		6C25DC056FC4DC1327AAC7DD /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				89ABA875BDF16373239CB619 /* ear-core */,
+				F2D707E910205C873DD500E9 /* ear-ui */,
+				C9E6E7FE8BBA343B323C1578 /* swift */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		87C7401F0A3E61603C25F8ED /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				6EE697B0F3948D2DBA9CE9E8 /* VegaEariOS.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		9346C561D7135B20E525CECC /* VegaEariOS */ = {
+			isa = PBXGroup;
+			children = (
+				C999CC2A8B6BDA9688232375 /* AppCoordinator.swift */,
+				EBAA26A9936AB343055D9FD3 /* Assets.xcassets */,
+				90CEBB67ACF11A4C091CEEAC /* iOSAudioCapturing.swift */,
+				8CEBB2265F88A88A81868723 /* iOSCuePlayer.swift */,
+				180CD16C64936FF6A7BF534B /* iOSOverlayController.swift */,
+				E37EB13DCE4920325BE743ED /* iOSStatusController.swift */,
+				A1922AB1EA0494B8A2A8C587 /* Settings.bundle */,
+				FF083A315C6B915142462B79 /* VegaEariOSApp.swift */,
+			);
+			path = VegaEariOS;
+			sourceTree = "<group>";
+		};
+		E304FFE0542C9AEDFF7E2DAB = {
+			isa = PBXGroup;
+			children = (
+				6C25DC056FC4DC1327AAC7DD /* Packages */,
+				9346C561D7135B20E525CECC /* VegaEariOS */,
+				87C7401F0A3E61603C25F8ED /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		C98F3976C83316D60D0ED316 /* VegaEariOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 49A5482CF0B9E497650CF50F /* Build configuration list for PBXNativeTarget "VegaEariOS" */;
+			buildPhases = (
+				638C54210DFDA180C18C3EC9 /* Sources */,
+				3EAC20A7DD83649E98FC3232 /* Resources */,
+				D5866C1D20C3DC817CDF3155 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = VegaEariOS;
+			packageProductDependencies = (
+				F3C7D0174E55346B699A209C /* EarProtocol */,
+				86F781D90AD10CA3A8C83327 /* EarCore */,
+				F800ECF4873A04A58AC2E57C /* EarUI */,
+			);
+			productName = VegaEariOS;
+			productReference = 6EE697B0F3948D2DBA9CE9E8 /* VegaEariOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E7285B600B9B84AEFCC1347A /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					C98F3976C83316D60D0ED316 = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 84BF4EE30B2ABEE5DAA75F96 /* Build configuration list for PBXProject "VegaEariOS" */;
+			developmentRegion = ru;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				ru,
+			);
+			mainGroup = E304FFE0542C9AEDFF7E2DAB;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				ABBCF4920622056EB7845170 /* XCLocalSwiftPackageReference "../../packages/ear-core" */,
+				593B4B5B89C5EF72F0E0195F /* XCLocalSwiftPackageReference "../../packages/ear-protocol/swift" */,
+				FDC5631A6AA377832EBF0F28 /* XCLocalSwiftPackageReference "../../packages/ear-ui" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 87C7401F0A3E61603C25F8ED /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				C98F3976C83316D60D0ED316 /* VegaEariOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		3EAC20A7DD83649E98FC3232 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				94652C66940536C24F03A85E /* Assets.xcassets in Resources */,
+				A1AE60F0F8658EC7CBA97EB1 /* Settings.bundle in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		638C54210DFDA180C18C3EC9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A49ED2D76D5A809855AC8758 /* AppCoordinator.swift in Sources */,
+				3D55A629B46B67DC060B65E1 /* VegaEariOSApp.swift in Sources */,
+				AD66820EDB7648E48A271C4A /* iOSAudioCapturing.swift in Sources */,
+				2021F707FAC7997151A24CE3 /* iOSCuePlayer.swift in Sources */,
+				C9CCCD20A720F26C3C026873 /* iOSOverlayController.swift in Sources */,
+				5DA494888ED694BDD1170BB8 /* iOSStatusController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		6D39D8E01F07EEFC90E9F4A8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		723DEFE5D15D6909E8AD2692 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		76D071E0979AE5ADEAB5FD68 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = VegaEariOS/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = me.pasynkov.VegaEariOS;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		8B10C8E823C339E7DF32E416 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = VegaEariOS/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = me.pasynkov.VegaEariOS;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		49A5482CF0B9E497650CF50F /* Build configuration list for PBXNativeTarget "VegaEariOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				76D071E0979AE5ADEAB5FD68 /* Debug */,
+				8B10C8E823C339E7DF32E416 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		84BF4EE30B2ABEE5DAA75F96 /* Build configuration list for PBXProject "VegaEariOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6D39D8E01F07EEFC90E9F4A8 /* Debug */,
+				723DEFE5D15D6909E8AD2692 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		593B4B5B89C5EF72F0E0195F /* XCLocalSwiftPackageReference "../../packages/ear-protocol/swift" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../../packages/ear-protocol/swift";
+		};
+		ABBCF4920622056EB7845170 /* XCLocalSwiftPackageReference "../../packages/ear-core" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../../packages/ear-core";
+		};
+		FDC5631A6AA377832EBF0F28 /* XCLocalSwiftPackageReference "../../packages/ear-ui" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../../packages/ear-ui";
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		86F781D90AD10CA3A8C83327 /* EarCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = EarCore;
+		};
+		F3C7D0174E55346B699A209C /* EarProtocol */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = EarProtocol;
+		};
+		F800ECF4873A04A58AC2E57C /* EarUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = EarUI;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = E7285B600B9B84AEFCC1347A /* Project object */;
+}

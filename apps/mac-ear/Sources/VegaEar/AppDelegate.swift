@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import EarCore
 import Foundation
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -12,24 +13,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var overlayController: OverlayWindowController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        identity = DeviceIdentityService()
+        #if DEBUG
+        let demoFlag = CommandLine.arguments.contains("--demo")
+        let envOn = ["1", "true", "yes", "on"]
+            .contains((ProcessInfo.processInfo.environment["VEGA_EAR_DEMO"] ?? "").lowercased())
+        let demoMode = demoFlag || envOn
+        #else
+        let demoMode = false
+        #endif
+
+        identity = DeviceIdentityService(deviceName: Host.current().localizedName ?? "Vega Ear")
         preferences = Preferences()
         statusController = StatusItemController()
         overlayController = OverlayWindowController()
         overlayController.anchorFrameProvider = { [weak self] in self?.statusController.statusButtonScreenFrame }
-        checkMicrophonePermission()
         statusController.onPauseToggle = { [weak self] paused in
-            self?.coordinator.setPaused(paused)
+            self?.coordinator?.setPaused(paused)
         }
         statusController.onQuit = { [weak self] in
-            self?.coordinator.shutdown()
+            self?.coordinator?.shutdown()
             NSApp.terminate(nil)
         }
         statusController.onTestWake = { [weak self] in
-            self?.coordinator.simulateWake()
+            self?.coordinator?.simulateWake()
         }
         statusController.onStopSession = { [weak self] in
-            self?.coordinator.stopActiveSession()
+            self?.coordinator?.stopActiveSession()
         }
         statusController.onMicSelected = { [weak self] uid in
             self?.applyMicSelection(uid: uid)
@@ -38,6 +47,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.applyWakeThreshold(value)
         }
         statusController.setWakeThreshold(preferences.wakeThreshold)
+
+        #if DEBUG
+        if demoMode {
+            NSLog("[VegaEar] DEMO MODE — skipping mic / wake / Core coordinator")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                guard let self else { return }
+                self.debugCycler = DebugStateCycler(overlay: self.overlayController)
+                self.debugCycler?.start()
+                NSLog("[VegaEar] DebugStateCycler started")
+            }
+            return
+        }
+        #endif
+
+        checkMicrophonePermission()
 
         do {
             audio = try AudioEngine()
@@ -86,7 +110,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("[VegaEar] Fatal during startup: \(error)")
             statusController.setState(.error("Startup failed: \(error.localizedDescription)"))
         }
+
     }
+
+    #if DEBUG
+    private var debugCycler: DebugStateCycler?
+    #endif
 
     func applicationWillTerminate(_ notification: Notification) {
         coordinator?.shutdown()

@@ -28,7 +28,12 @@ export const EventName = {
 } as const;
 export type EventName = (typeof EventName)[keyof typeof EventName];
 
-export const CapabilityEnum = z.enum(["mic", "wake", "speaker", "display"]);
+// `vad` declares that the device opens `session_start` on voice-activity
+// detection rather than wake-word. A `vad`-only device emits `session_start`
+// with no prior `wake_detected`. A device may declare both `wake` and `vad`
+// (multi-modal). Core does not enforce the wake precondition today; clients
+// SHALL follow the contract appropriate to their declared capabilities.
+export const CapabilityEnum = z.enum(["mic", "wake", "vad", "speaker", "display"]);
 export type Capability = z.infer<typeof CapabilityEnum>;
 
 export const EarEndReasonEnum = z.enum(["user", "timeout", "vad"]);

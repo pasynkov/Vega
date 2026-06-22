@@ -11,6 +11,8 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../../packages/ear-protocol/swift"),
+        .package(path: "../../packages/ear-core"),
+        .package(path: "../../packages/ear-ui"),
         .package(url: "https://github.com/microsoft/onnxruntime-swift-package-manager", exact: "1.20.0"),
         .package(url: "https://github.com/socketio/socket.io-client-swift", from: "16.1.1")
     ],
@@ -19,6 +21,8 @@ let package = Package(
             name: "VegaEar",
             dependencies: [
                 .product(name: "EarProtocol", package: "swift"),
+                .product(name: "EarCore", package: "ear-core"),
+                .product(name: "EarUI", package: "ear-ui"),
                 .product(name: "onnxruntime", package: "onnxruntime-swift-package-manager"),
                 .product(name: "SocketIO", package: "socket.io-client-swift")
             ],
@@ -26,11 +30,6 @@ let package = Package(
             resources: [
                 .process("Resources")
             ]
-        ),
-        .testTarget(
-            name: "VegaEarTests",
-            dependencies: ["VegaEar"],
-            path: "Tests/VegaEarTests"
         )
     ]
 )

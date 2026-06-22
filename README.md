@@ -63,7 +63,7 @@ On first launch:
 
 1. Start Core (`npm run core:dev`). Confirm it logs the bound WS address.
 2. Launch the Mac Ear. Confirm the menu-bar icon enters `idle`.
-3. Say **"Janet"** or **"Edna"** followed by any phrase.
+3. Say **"Вега"** followed by any phrase.
 4. Hear the wake cue at wake, `Pop` cue at end-of-utterance.
 5. Check `recordings/<ISO-timestamp>/` for `audio.ogg`, `transcript.txt`, `meta.json`.
 6. Verify `transcript.txt` is non-empty.

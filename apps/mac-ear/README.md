@@ -29,26 +29,25 @@ The Ear runs OpenWakeWord locally via ONNX Runtime (Swift Package). On every 80 
 
 1. `melspectrogram.onnx` converts the most recent ~110 ms window of raw Int16 PCM into 8 new mel-spec frames (32 bins, OWW transform `x/10 + 2`).
 2. `embedding_model.onnx` consumes the last 76 mel frames and emits a single 96-dim embedding.
-3. Each classifier head (`Janet.onnx`, `edna.onnx`) reads the last 16 embeddings and produces a sigmoid score in `[0, 1]`.
+3. Each classifier head (`Vega.onnx`) reads the last 16 embeddings and produces a sigmoid score in `[0, 1]`.
 4. The first head whose score crosses the user-configurable threshold fires `wake_detected`. A short cooldown suppresses double-fires within ~1.5 s.
 
 The candidate list and the threshold are the only knobs:
 
-- Candidates are a hard-coded array in `OpenWakeWordDetector.init` (`["Janet", "edna"]`). To add or trim candidates, edit the array and rebuild.
+- Candidates are a hard-coded array in `OpenWakeWordDetector.init` (`["Vega"]`). To add or trim candidates, edit the array and rebuild. The Russian "Вега" head is trained locally via `tools/wake-training/`.
 - The "Wake sensitivity" menu-bar submenu offers four presets: `Low (0.3)`, `Default (0.5)`, `High (0.7)`, `Very High (0.85)`. The active preset is check-marked. Selection updates the live detector immediately and persists to `~/Library/Application Support/Vega/preferences.json`.
 
 ## Bundled models
 
-All four ONNX files live in `Sources/VegaEar/Resources/` and are loaded via `Bundle.module`. They ship under their original licences (Apache-2.0 for the shared front-end, project-specific licences for community classifier heads — see source repos).
+All three ONNX files live in `Sources/VegaEar/Resources/` and are loaded via `Bundle.module`. The shared front-end ships under Apache-2.0 (openWakeWord upstream); the `Vega.onnx` head is trained locally via `tools/wake-training/` and ships under the repo's licence.
 
 | File                  | Purpose                                       | Source                                                                                                                  | SHA-256                                                              |
 |-----------------------|-----------------------------------------------|-------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------|
 | `melspectrogram.onnx` | OWW shared mel front-end                      | [openWakeWord upstream](https://github.com/dscripka/openWakeWord/tree/main/openwakeword/resources/models)               | `ba2b0e0f8b7b875369a2c89cb13360ff53bac436f2895cced9f479fa65eb176f` |
 | `embedding_model.onnx`| OWW shared speech-embedding model             | [openWakeWord upstream](https://github.com/dscripka/openWakeWord/tree/main/openwakeword/resources/models)               | `70d164290c1d095d1d4ee149bc5e00543250a7316b59f31d056cff7bd3075c1f` |
-| `Janet.onnx`          | Wake-word candidate "Janet"                   | [fwartner/home-assistant-wakewords-collection](https://github.com/fwartner/home-assistant-wakewords-collection)         | `a3d0f9cffbba5abe6d9726768a575d5c356cf8bed13a3b583864884af948c3fa` |
-| `edna.onnx`           | Wake-word candidate "Edna"                    | [fwartner/home-assistant-wakewords-collection](https://github.com/fwartner/home-assistant-wakewords-collection)         | `da4fed6ced82ac4fe8bff2746a06e17931f63eca4b8f0bb826c8f0ba98337430` |
+| `Vega.onnx`           | Russian "Вега" wake-word classifier head      | [tools/wake-training/](../../tools/wake-training/)                                                                       | `33279186110700aea044f72184488fb6675b7a0299c9cce1a377eb3098f32989` |
 
-Picking a winning candidate after a daily-use A/B (or training a custom-branded model) is tracked as a follow-up.
+Retraining: see `tools/wake-training/README.md`. A follow-up may add an English "Vega" head as a second candidate.
 
 ## Audio encoding
 

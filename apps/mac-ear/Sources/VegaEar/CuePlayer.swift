@@ -1,17 +1,11 @@
 import AppKit
+import EarCore
 
-enum CueSound: String {
-    case wake
-    case endpoint
-    case error
-    case ackDone
-    case ackContinue
-    case ackThinking
-    case ackSuccess
-    case ackError
-    case ackUnknown
-    case cueListen
-
+// macOS implementation of EarCore.CuePlaying — resolves CueSound to a
+// `/System/Library/Sounds/*.aiff` file and plays via NSSound. The Cue
+// enum itself lives in EarCore; iOS will provide its own implementation
+// backed by bundled AVAudioPlayer assets.
+extension CueSound {
     var systemSoundPath: String {
         switch self {
         case .wake: return "/System/Library/Sounds/Purr.aiff"
@@ -30,7 +24,7 @@ enum CueSound: String {
     }
 }
 
-final class CuePlayer {
+final class CuePlayer: CuePlaying {
     private var cache: [CueSound: NSSound] = [:]
 
     func play(_ cue: CueSound) {
