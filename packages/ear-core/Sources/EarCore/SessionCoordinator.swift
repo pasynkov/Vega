@@ -80,6 +80,7 @@ public final class SessionCoordinator {
             //     the backend crashed, and every fresh overlay_update gets
             //     dropped as stale (sound plays, visual never updates).
             self?.overlay.hideOverlay()
+            self?.overlay.setConnected(connected)
         }
 
         audio.addSink { [weak self] pcm in

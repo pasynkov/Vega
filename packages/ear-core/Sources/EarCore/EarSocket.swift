@@ -112,7 +112,15 @@ public final class EarSocket: EarSocketing {
         socket.on(clientEvent: .reconnect) { _, _ in
             NSLog("[EarCore] socket.io reconnecting")
         }
-        socket.on(clientEvent: .error) { data, _ in
+        // socket.io-client-swift doesn't fire .disconnect on raw TCP
+        // RST — we hear about it only via .reconnectAttempt / .error.
+        // Surface either as a disconnected status so the UI clears
+        // before the reconnect loop catches up.
+        socket.on(clientEvent: .reconnectAttempt) { [weak self] _, _ in
+            NSLog("[EarCore] socket.io reconnect attempt — reporting disconnect")
+            self?.onStatusChange?(false)
+        }
+        socket.on(clientEvent: .error) { [weak self] data, _ in
             // socket.io-client-swift `.error` data carries a free-form
             // payload; print only the textual / dictionary parts so we
             // don't flood the log with SocketAckEmitter pointer descs.
@@ -125,6 +133,7 @@ public final class EarSocket: EarSocketing {
             if !textual.isEmpty {
                 NSLog("[EarCore] socket.io error: \(textual.joined(separator: " | "))")
             }
+            self?.onStatusChange?(false)
         }
     }
 

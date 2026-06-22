@@ -18,16 +18,32 @@ final class iOSAudioCapturing: AudioCapturing {
         queue.async { self.sinks.append(sink) }
     }
 
+    /// Synthetically push a buffer of raw PCM through every attached
+    /// sink — used by the VAD trigger to replay the ~400 ms pre-roll
+    /// that captured the start of the user's phrase before VAD fired.
+    /// Same queue as live frames so ordering is preserved.
+    func injectPreroll(_ pcm: Data) {
+        queue.async {
+            for sink in self.sinks { sink(pcm) }
+        }
+    }
+
+    private var tapCallbacks: Int = 0
     func start() throws {
         if engine.isRunning { return }
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         currentSampleRate = format.sampleRate
+        NSLog("[VegaEariOS] iOSAudioCapturing.start sampleRate=\(format.sampleRate) channels=\(format.channelCount)")
 
         if !tapInstalled {
             input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
                 guard let self else { return }
                 let data = Self.convertToInt16Data(buffer: buffer)
+                self.tapCallbacks += 1
+                if self.tapCallbacks <= 5 || self.tapCallbacks % 200 == 0 {
+                    NSLog("[VegaEariOS] mic tap #\(self.tapCallbacks) frames=\(buffer.frameLength) bytes=\(data.count)")
+                }
                 self.queue.async {
                     for sink in self.sinks { sink(data) }
                 }
@@ -37,6 +53,7 @@ final class iOSAudioCapturing: AudioCapturing {
 
         engine.prepare()
         try engine.start()
+        NSLog("[VegaEariOS] iOSAudioCapturing engine started")
     }
 
     func stop() {

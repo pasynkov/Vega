@@ -7,7 +7,7 @@ import EarProtocol
 // monotonic seq counters; stale messages are dropped.
 @MainActor
 public final class OverlayViewModel: ObservableObject {
-    @Published public private(set) var kind: OverlayKind = .listening
+    @Published public private(set) var kind: OverlayKind = .idle
     @Published public private(set) var hint: String? = nil
     @Published public private(set) var caption: String? = nil
     @Published public private(set) var viewTitle: String? = nil
@@ -48,6 +48,17 @@ public final class OverlayViewModel: ObservableObject {
         liveCaption = (trimmed?.isEmpty ?? true) ? nil : trimmed
     }
 
+    /// Set a local-only baseline overlay state (e.g. "always listening"
+    /// after socket connect on iOS). Does NOT touch `lastOverlaySeq`
+    /// so the next Core-driven `overlay_update` — including the very
+    /// first one with `seq: 1` — is still accepted.
+    public func setLocalBaseline(kind: OverlayKind) {
+        self.kind = kind
+        self.hint = nil
+        self.caption = nil
+        refreshVisibility()
+    }
+
     public func applyListView(_ message: ListViewUpdateMessage) {
         if message.seq <= lastListSeq {
             NSLog("[EarCore] listView drop stale seq=\(message.seq) last=\(lastListSeq)")
@@ -78,6 +89,7 @@ public final class OverlayViewModel: ObservableObject {
     // Session-end / disconnect → wipe state and reset seq counters.
     public func hide() {
         visible = false
+        kind = .idle
         hint = nil
         caption = nil
         viewTitle = nil

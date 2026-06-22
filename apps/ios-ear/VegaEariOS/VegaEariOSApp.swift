@@ -14,16 +14,20 @@ struct VegaEariOSApp: App {
                 .statusBarHidden(coordinator.overlayViewModel.kind != .idle)
                 .onAppear {
                     Theme.registerFonts()
-                    coordinator.start()
+                    if !VegaDemoMode.enabled {
+                        coordinator.start()
+                    }
                 }
                 .onReceive(
                     NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
                 ) { _ in
+                    guard !VegaDemoMode.enabled else { return }
                     coordinator.handleDidBecomeActive()
                 }
                 .onReceive(
                     NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)
                 ) { _ in
+                    guard !VegaDemoMode.enabled else { return }
                     coordinator.handleWillResignActive()
                 }
         }
@@ -39,8 +43,12 @@ struct ContentView: View {
     var body: some View {
         OverlayView(vm: viewModel, layout: .fullScreen)
             #if DEBUG
-            .onTapGesture { DebugStateCycler.next(into: viewModel) }
+            .onTapGesture {
+                guard VegaDemoMode.enabled else { return }
+                DebugStateCycler.next(into: viewModel)
+            }
             .onAppear {
+                guard VegaDemoMode.enabled else { return }
                 timer = Timer.scheduledTimer(withTimeInterval: 4.0, repeats: true) { _ in
                     Task { @MainActor in DebugStateCycler.next(into: viewModel) }
                 }
@@ -51,6 +59,21 @@ struct ContentView: View {
 
 #if DEBUG
 import EarProtocol
+
+/// Demo mode toggles a synthetic cycle through every overlay state and
+/// suppresses the real WebSocket / mic stack. Enabled via:
+///   - launch arg  `--demo`        (Xcode → Scheme → Arguments)
+///   - env var     `VEGA_DEMO=1`   (Xcode → Scheme → Environment Variables)
+///   - UserDefaults `vega.demo` = true
+enum VegaDemoMode {
+    static let enabled: Bool = {
+        if CommandLine.arguments.contains("--demo") { return true }
+        let env = ProcessInfo.processInfo.environment["VEGA_DEMO"]?.lowercased() ?? ""
+        if ["1", "true", "yes", "on"].contains(env) { return true }
+        if UserDefaults.standard.bool(forKey: "vega.demo") { return true }
+        return false
+    }()
+}
 
 enum DebugStateCycler {
     private static var seq = 0
@@ -100,4 +123,6 @@ enum DebugStateCycler {
         }
     }
 }
+#else
+enum VegaDemoMode { static let enabled: Bool = false }
 #endif

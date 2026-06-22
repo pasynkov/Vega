@@ -37,6 +37,12 @@ final class OpenWakeWordDetector: WakeWordDetector {
     private let embedDim = 96
     private let classifierWindow = 16          // embeddings per classifier inference
     private let cooldownSeconds: TimeInterval = 1.5
+    // RMS-based audio-energy gate over the last ~1.28 s of raw mic samples.
+    // The head can hallucinate on quiet mic floors the training data never
+    // covered — gate makes the runtime ignore those ranges entirely.
+    // Measured: real-mic silence captures peak at ~70 int16 RMS, real "Вега"
+    // recordings start at ~115. Gate at 90 cleanly separates with a margin.
+    private let rmsGate: Double = 90.0
 
     private struct Classifier {
         let name: String
@@ -60,11 +66,16 @@ final class OpenWakeWordDetector: WakeWordDetector {
     private var rawBuffer: [Int16] = []
     private var melBuffer: [Float] = []        // flat row-major frames * 32 bins
     private var embedBuffer: [Float] = []      // flat row-major embeddings * 96 dims
+    // Side ringbuffer kept just for the RMS energy gate — `rawBuffer` shrinks
+    // as chunks are processed, so we can't use it for a multi-second RMS view.
+    private var energyBuffer: [Int16] = []
+    private let energyWindowSamples: Int       // initialised in init from chunkSamples * classifierWindow
     private var lastDetectAt: Date?
     private var threshold: Float
 
     init(threshold: Double, candidateNames: [String] = ["Vega"]) throws {
         self.threshold = Float(threshold)
+        self.energyWindowSamples = 1280 * 16  // chunkSamples * classifierWindow; 1.28 s @ 16 kHz
 
         env = try ORTEnv(loggingLevel: .warning)
         sessionOptions = try ORTSessionOptions()
@@ -116,6 +127,13 @@ final class OpenWakeWordDetector: WakeWordDetector {
         var newSamples = [Int16](repeating: 0, count: sampleCount)
         _ = newSamples.withUnsafeMutableBytes { pcm.copyBytes(to: $0) }
         rawBuffer.append(contentsOf: newSamples)
+        // Mirror into the energy ring (cap = 1.28 s) for the gate check.
+        // `rawBuffer` is consumed as chunks are processed, so it cannot
+        // carry a multi-second window for RMS calculation.
+        energyBuffer.append(contentsOf: newSamples)
+        if energyBuffer.count > energyWindowSamples {
+            energyBuffer.removeFirst(energyBuffer.count - energyWindowSamples)
+        }
 
         // Keep ~5 seconds of raw audio for context (more than enough — only
         // the last 1760 samples are actually used per chunk).
@@ -229,6 +247,19 @@ final class OpenWakeWordDetector: WakeWordDetector {
         // Cooldown: if we recently fired, skip classifier scoring entirely.
         if let last = lastDetectAt, Date().timeIntervalSince(last) < cooldownSeconds {
             return
+        }
+
+        // Energy gate: skip head inference on near-silent input.
+        // RMS over the side `energyBuffer` (≈ 1.28 s of mic samples) since
+        // `rawBuffer` is consumed as chunks are processed and would only ever
+        // hold ~melContextSamples worth of data here.
+        if energyBuffer.count >= energyWindowSamples / 2 {
+            var sumSq: Double = 0
+            for s in energyBuffer { let d = Double(s); sumSq += d * d }
+            let rms = (sumSq / Double(energyBuffer.count)).squareRoot()
+            if rms < rmsGate {
+                return
+            }
         }
 
         for clf in classifiers {

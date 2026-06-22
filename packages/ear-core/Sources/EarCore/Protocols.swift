@@ -90,10 +90,16 @@ public protocol OverlayControlling: AnyObject {
     /// Sticky transcript text from STT (`final_transcript`).
     /// Implementations forward this into `OverlayViewModel.setLiveCaption`.
     func setLiveCaption(_ text: String?)
+    /// Notify the overlay layer that the socket connection state to Core
+    /// changed. Mac shell ignores this (status item is the indicator);
+    /// iOS shell uses it to paint a baseline "always listening" overlay
+    /// while connected, and a blank screen when disconnected.
+    func setConnected(_ connected: Bool)
 }
 
 public extension OverlayControlling {
     func setLiveCaption(_ text: String?) {}
+    func setConnected(_ connected: Bool) {}
 }
 
 // MARK: - Audio capture

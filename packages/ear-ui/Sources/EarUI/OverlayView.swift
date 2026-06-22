@@ -46,7 +46,7 @@ public struct OverlayView: View {
             if listOpen {
                 VStack(alignment: .leading, spacing: 0) {
                     EarListView(title: vm.viewTitle, items: vm.viewItems,
-                                live: vm.kind == .immersive, badge: titleBadge)
+                                live: lensIsLive, badge: titleBadge)
                         .padding(.horizontal, 24)
                         .padding(.top, 26)
                         .padding(.bottom, captionText == nil ? 26 : 0)
@@ -86,6 +86,16 @@ public struct OverlayView: View {
     /// but they don't drive list-visibility on their own.
     private var listOpen: Bool { vm.viewOpen }
 
+    /// Lens mark in the title pulses when the list is being driven by
+    /// an active immersive session — i.e. the list is open and we're
+    /// not in the static `view` (read-only browse) kind. After an ack
+    /// Core swings the overlay through success → idle while the list
+    /// stays open; the lens should keep pulsing so the user knows the
+    /// mic is still live in that domain.
+    private var lensIsLive: Bool {
+        vm.viewOpen && vm.kind != .view
+    }
+
     /// When a list is open, transient ack states map to a small badge
     /// next to the list title instead of a floating mark overlay.
     private var titleBadge: EarListView.TitleBadge {
@@ -118,55 +128,45 @@ public struct OverlayView: View {
                         .opacity(vm.kind == .error ? 1 : 0)
                 }
 
-                // Mark layer — always rendered, fades out on view/immersive/idle.
-                MorphMark(kind: vm.kind, size: 168)
-                    .opacity(markVisible ? 1 : 0)
-                    .scaleEffect(markVisible ? 1 : 0.4, anchor: .center)
-                    .position(x: geo.size.width / 2, y: geo.size.height * 0.42)
+                if vm.viewOpen {
+                    // List mode: list with live lens (or ack badge) at the
+                    // title, STT live caption pill at the bottom.
+                    EarListView(title: vm.viewTitle, items: vm.viewItems,
+                                live: lensIsLive,
+                                badge: titleBadge)
+                        .padding(.horizontal, 30)
+                        .padding(.top, geo.size.height * 0.13)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
 
-                // Below-orb caption.
-                Text(belowOrbText ?? "")
-                    .font(Theme.Font.body(size: vm.kind == .error ? 19 : 18))
-                    .fontWeight(vm.kind == .error ? .semibold : .regular)
-                    .foregroundColor(belowColor)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(3)
-                    .padding(.horizontal, 44)
-                    .opacity(belowOrbText?.isEmpty == false && markVisible ? 1 : 0)
-                    .position(x: geo.size.width / 2, y: geo.size.height * 0.62)
+                    if let cap = captionText, !cap.isEmpty {
+                        VStack {
+                            Spacer()
+                            ImmersiveBottomCaption(text: cap)
+                                .padding(.horizontal, 30)
+                                .padding(.bottom, 42)
+                        }
+                    }
+                } else if vm.kind != .idle {
+                    // Orb mode: big mark + caption below.
+                    MorphMark(kind: vm.kind, size: 168)
+                        .position(x: geo.size.width / 2, y: geo.size.height * 0.42)
 
-                // List view — crossfades in for .view and .immersive.
-                EarListView(title: vm.viewTitle, items: vm.viewItems, live: vm.kind == .immersive)
-                    .padding(.horizontal, 30)
-                    .padding(.top, geo.size.height * 0.13)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .opacity(listVisible ? 1 : 0)
-
-                // Immersive bottom live pill.
-                VStack {
-                    Spacer()
-                    if let cap = vm.caption, !cap.isEmpty {
-                        ImmersiveBottomCaption(text: cap)
-                            .padding(.horizontal, 30)
-                            .padding(.bottom, 42)
+                    if let belowText = belowOrbText, !belowText.isEmpty {
+                        Text(belowText)
+                            .font(Theme.Font.body(size: vm.kind == .error ? 19 : 18))
+                            .fontWeight(vm.kind == .error ? .semibold : .regular)
+                            .foregroundColor(belowColor)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(3)
+                            .padding(.horizontal, 44)
+                            .position(x: geo.size.width / 2, y: geo.size.height * 0.62)
                     }
                 }
-                .opacity(vm.kind == .immersive ? 1 : 0)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(.easeInOut(duration: 0.55), value: vm.kind)
+            .animation(.easeInOut(duration: 0.45), value: vm.kind)
+            .animation(.easeInOut(duration: 0.45), value: vm.viewOpen)
         }
-    }
-
-    private var markVisible: Bool {
-        switch vm.kind {
-        case .view, .immersive, .idle: return false
-        default: return true
-        }
-    }
-
-    private var listVisible: Bool {
-        vm.kind == .view || vm.kind == .immersive
     }
 
     // MARK: - shared content

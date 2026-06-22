@@ -45,7 +45,7 @@ All three ONNX files live in `Sources/VegaEar/Resources/` and are loaded via `Bu
 |-----------------------|-----------------------------------------------|-------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------|
 | `melspectrogram.onnx` | OWW shared mel front-end                      | [openWakeWord upstream](https://github.com/dscripka/openWakeWord/tree/main/openwakeword/resources/models)               | `ba2b0e0f8b7b875369a2c89cb13360ff53bac436f2895cced9f479fa65eb176f` |
 | `embedding_model.onnx`| OWW shared speech-embedding model             | [openWakeWord upstream](https://github.com/dscripka/openWakeWord/tree/main/openwakeword/resources/models)               | `70d164290c1d095d1d4ee149bc5e00543250a7316b59f31d056cff7bd3075c1f` |
-| `Vega.onnx`           | Russian "Вега" wake-word classifier head      | [tools/wake-training/](../../tools/wake-training/)                                                                       | `33279186110700aea044f72184488fb6675b7a0299c9cce1a377eb3098f32989` |
+| `Vega.onnx`           | Russian "Вега" wake-word classifier head      | [tools/wake-training/](../../tools/wake-training/)                                                                       | `c61b614d1d9e5ef10a200053b59dcb3e1633151f608f3439470e185657f8bfc9` |
 
 Retraining: see `tools/wake-training/README.md`. A follow-up may add an English "Vega" head as a second candidate.
 

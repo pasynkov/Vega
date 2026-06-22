@@ -79,7 +79,13 @@ final class AppCoordinator: ObservableObject {
     }
 
     func handleWillResignActive() {
-        coordinator?.stopActiveSession()
+        // Going into background: tear the whole coordinator down so the
+        // socket disconnects from Core, the mic releases, and Core
+        // logs an explicit disconnect rather than a silent stale conn.
+        // didBecomeActive will rebuild from scratch.
+        coordinator?.shutdown()
+        coordinator = nil
+        currentEndpoint = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
@@ -129,13 +135,29 @@ final class AppCoordinator: ObservableObject {
         )
         c.onSessionStateChange = { [weak self] active in
             self?.status.setSessionActive(active)
+            // When a session ends, reset the VAD trigger so it
+            // re-calibrates against the fresh ambient floor and is
+            // ready to fire on the next onset. Without this the
+            // detector latches at the noise floor it saw mid-session
+            // and refuses to recognise the next quiet onset.
+            if !active {
+                self?.vadTrigger.reset()
+            }
         }
         coordinator = c
 
         // VAD trigger: on voice-activity onset, simulate wake. The
         // SessionCoordinator emits session_start as usual; Core's gateway
-        // accepts it because this device registered with `vad`.
-        vadTrigger.onVoiceOnset = { [weak c] in c?.simulateWake() }
+        // accepts it because this device registered with `vad`. The
+        // pre-roll buffer is the ~400 ms of mic audio captured BEFORE
+        // VAD fired — flushed into the session so the leading syllables
+        // of the user's phrase aren't clipped.
+        vadTrigger.onVoiceOnset = { [weak c, weak audio] preroll in
+            guard let c, let audio else { return }
+            c.simulateWake()
+            c.waitForPendingWork()
+            audio.injectPreroll(preroll)
+        }
         audio.addSink { [weak self] pcm in
             self?.vadTrigger.feed(pcm)
         }
@@ -145,37 +167,125 @@ final class AppCoordinator: ObservableObject {
         } catch {
             NSLog("[VegaEariOS] coordinator.start failed: \(error)")
         }
+        // After audio.start() inside coordinator the engine has settled
+        // on a sample rate — propagate it into the VAD so the pre-roll
+        // ring buffer caps at ~400 ms of bytes regardless of hardware.
+        vadTrigger.sampleRate = audio.currentSampleRate
     }
 }
 
 // MARK: - VAD-trigger
 
+/// Detects voice-activity onset and keeps a rolling pre-roll buffer of
+/// the last ~`prerollMs` of raw PCM so the SessionCoordinator can
+/// inject it as the first audio_frames after `session_start`, avoiding
+/// clipped leading syllables.
 final class VADTrigger {
-    var onVoiceOnset: (() -> Void)?
+    var onVoiceOnset: ((Data) -> Void)?
+    /// Mic sample rate; used to bound the pre-roll ring buffer in bytes.
+    var sampleRate: Double = 48_000 {
+        didSet { queue.async { self.recomputePrerollCapacity() } }
+    }
+    private let prerollMs: Int = 400
     private let queue = DispatchQueue(label: "vega.ear.ios.vad")
-    private let detector: SilenceDetector = {
+    private var detector: SilenceDetector = VADTrigger.makeDetector()
+    private var didFireForCurrentBurst = false
+    private var prerollChunks: [Data] = []
+    private var prerollByteCount: Int = 0
+    private var prerollCapacityBytes: Int = 0
+
+    init() {
+        recomputePrerollCapacity()
+    }
+
+    private static func computeRms(_ pcm: Data) -> Double {
+        let count = pcm.count / MemoryLayout<Int16>.size
+        guard count > 0 else { return 0 }
+        var sumSquares: Double = 0
+        pcm.withUnsafeBytes { raw in
+            let buf = raw.bindMemory(to: Int16.self)
+            for s in buf {
+                let f = Double(s)
+                sumSquares += f * f
+            }
+        }
+        return (sumSquares / Double(count)).squareRoot()
+    }
+
+    private static func makeDetector() -> SilenceDetector {
         var cfg = SilenceDetector.Config()
         cfg.endSilenceMs = 1_500
         cfg.graceMs = 300
         cfg.calibrationMs = 600
+        // Lower speech margin so quieter speech still wakes the trigger.
+        // Simulator mic in particular feeds through low RMS levels.
+        cfg.speechMargin = 120
+        cfg.silenceMargin = 60
         return SilenceDetector(config: cfg)
-    }()
-    private var didFireForCurrentBurst = false
+    }
 
+    /// Drop the current detector and start a fresh calibration window.
+    /// Called by AppCoordinator after every session end so the next
+    /// onset detection works against the current ambient floor.
+    func reset() {
+        queue.async {
+            NSLog("[VegaEariOS] VAD reset — re-arming for next onset")
+            self.detector = Self.makeDetector()
+            self.didFireForCurrentBurst = false
+            self.prerollChunks.removeAll()
+            self.prerollByteCount = 0
+        }
+    }
+
+    private var feedCount = 0
     func feed(_ pcm: Data) {
         queue.async {
+            self.feedCount += 1
+            if self.feedCount % 20 == 0 {
+                let rms = Self.computeRms(pcm)
+                NSLog(String(format: "[VegaEariOS] VAD feed #%d rms=%.0f didFire=%d",
+                             self.feedCount, rms, self.didFireForCurrentBurst ? 1 : 0))
+            }
+            self.pushPreroll(pcm)
             let d = self.detector.feed(pcm: pcm)
             switch d {
             case .ongoing:
                 if !self.didFireForCurrentBurst {
                     self.didFireForCurrentBurst = true
-                    DispatchQueue.main.async { self.onVoiceOnset?() }
+                    let preroll = self.flushPreroll()
+                    NSLog("[VegaEariOS] VAD onset → fire (preroll=\(preroll.count)B)")
+                    DispatchQueue.main.async {
+                        self.onVoiceOnset?(preroll)
+                    }
                 }
             case .endpoint:
+                if self.didFireForCurrentBurst {
+                    NSLog("[VegaEariOS] VAD endpoint → re-armed")
+                }
                 self.didFireForCurrentBurst = false
             case .waiting:
                 break
             }
         }
+    }
+
+    private func pushPreroll(_ pcm: Data) {
+        prerollChunks.append(pcm)
+        prerollByteCount += pcm.count
+        while prerollByteCount > prerollCapacityBytes, prerollChunks.count > 1 {
+            let dropped = prerollChunks.removeFirst()
+            prerollByteCount -= dropped.count
+        }
+    }
+
+    private func flushPreroll() -> Data {
+        var out = Data(capacity: prerollByteCount)
+        for chunk in prerollChunks { out.append(chunk) }
+        return out
+    }
+
+    private func recomputePrerollCapacity() {
+        // bytes = sampleRate * (ms/1000) * 2 (Int16)
+        prerollCapacityBytes = Int(sampleRate * Double(prerollMs) / 1000.0) * 2
     }
 }
