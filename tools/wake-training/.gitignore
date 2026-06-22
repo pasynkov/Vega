@@ -1,0 +1,9 @@
+data/positives/
+data/negatives/
+data/eval/
+embeddings_cache/
+checkpoints/
+.venv/
+.venv.*/
+__pycache__/
+*.pyc

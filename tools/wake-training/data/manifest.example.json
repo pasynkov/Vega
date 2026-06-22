@@ -1,0 +1,48 @@
+{
+  "$schema_hint": "Per-dataset-directory manifest. One entry per audio file. Used by build_embedding_cache.py to enumerate inputs and by eval_threshold.py for source attribution.",
+  "version": 1,
+  "generated_at": "2026-06-19T14:00:00Z",
+  "split": "train",
+  "embedding_model_sha256": "<sha256-of-embedding_model.onnx>",
+  "files": [
+    {
+      "path": "positives/synthetic/ru_RU-irina-medium__0001.wav",
+      "label": 1,
+      "source": "piper",
+      "voice": "ru_RU-irina-medium",
+      "sample_rate": 16000,
+      "duration_s": 0.83,
+      "augmentation": []
+    },
+    {
+      "path": "positives/real/2026-06-19T14-08-58.182Z.wav",
+      "label": 1,
+      "source": "user_recording",
+      "recording_id": "8943704d-3312-4bed-ae95-f139f51b38f4",
+      "sample_rate": 16000,
+      "duration_s": 6.65,
+      "augmentation": [
+        { "op": "add_noise", "snr_db": 15.0, "noise_id": "background/room_01.wav" },
+        { "op": "gain", "db": -2.3 }
+      ]
+    },
+    {
+      "path": "negatives/common_voice/cv_ru_common_voice_ru_25612345.wav",
+      "label": 0,
+      "source": "common_voice_ru",
+      "speaker_hash": "f1c4e0a2",
+      "sample_rate": 16000,
+      "duration_s": 4.12,
+      "augmentation": []
+    },
+    {
+      "path": "negatives/near_miss/bega_001.wav",
+      "label": 0,
+      "source": "near_miss_curated",
+      "word": "Бега",
+      "sample_rate": 16000,
+      "duration_s": 0.71,
+      "augmentation": []
+    }
+  ]
+}

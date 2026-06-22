@@ -1,0 +1,16 @@
+# Wake-word head training deps. Python 3.12 on Apple Silicon macOS.
+# Pinned to a verified-resolving set; bump as needed.
+
+# piper-tts removed from pypi (piper-phonemize wheels gone). Install the
+# standalone binary from https://github.com/rhasspy/piper/releases instead
+# and put it on PATH; gen_synthetic_positives.py invokes `piper` as a subprocess.
+onnxruntime==1.20.0  # MUST match the version bundled by apps/mac-ear's Swift ORT package; embed_model.onnx outputs differ across major ORT releases.
+torch>=2.5,<3
+numpy>=1.26,<3
+pandas>=2.2,<3
+pyarrow>=18,<22
+librosa>=0.10,<1
+audiomentations>=0.37,<1
+soundfile>=0.12,<1
+tqdm>=4.66,<5
+datasets>=3.0,<4
