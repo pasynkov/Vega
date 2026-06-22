@@ -23,7 +23,9 @@ export class LlmService implements OnModuleInit {
     @InjectPinoLogger(LlmService.name) private readonly logger: PinoLogger,
     private readonly env: EnvConfig,
   ) {
-    void this.verifyAuth();
+    if (!this.env.disableBootPing) {
+      void this.verifyAuth();
+    }
   }
 
   async onModuleInit(): Promise<void> {
@@ -33,7 +35,7 @@ export class LlmService implements OnModuleInit {
     this.getModel();
     this.logger.info({ defaultModel: DEFAULT_MODEL }, "LLM client ready");
 
-    if (this.env.llmPingOnBoot) {
+    if (this.env.llmPingOnBoot && !this.env.disableBootPing) {
       await this.ping();
     }
   }

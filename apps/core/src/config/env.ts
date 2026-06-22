@@ -71,4 +71,8 @@ export class EnvConfig {
   readonly recordingsDir: string = resolveRecordingsDir();
   readonly vegaDbPath: string = resolveDbPath(this.recordingsDir);
   readonly llmPingOnBoot: boolean = process.env.VEGA_LLM_PING_ON_BOOT === "1";
+  // When set, suppresses the boot-time `verifyAuth` fetch calls in both
+  // LlmService and DeepgramClient and skips LlmService.ping. Lets the e2e
+  // harness boot the Nest app fully offline with no outbound HTTPS.
+  readonly disableBootPing: boolean = process.env.VEGA_DISABLE_BOOT_PING === "1";
 }

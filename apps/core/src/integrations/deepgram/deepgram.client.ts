@@ -27,7 +27,9 @@ export class DeepgramClient {
     @InjectPinoLogger(DeepgramClient.name) private readonly logger: PinoLogger,
     private readonly env: EnvConfig,
   ) {
-    void this.verifyAuth();
+    if (!this.env.disableBootPing) {
+      void this.verifyAuth();
+    }
   }
 
   private async verifyAuth(): Promise<void> {
